@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "notion-bank": {
+      "command": "npx",
+      "args": ["-y", "notion-bank-mcp"]
+    }
+  }
+}

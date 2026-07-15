@@ -1,0 +1,35 @@
+# Dependencies & build
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local env / secrets (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+oauth-pending.json
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.cache/
+
+# Editor / local MCP wiring (machine-specific paths)
+.cursor/
+.vscode/
+.idea/
+*.swp
+
+# Local exports / scratch
+exports/
+tmp/
+.temp/
+
+# Coverage / test artifacts
+coverage/
+.nyc_output/
