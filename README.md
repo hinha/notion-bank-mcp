@@ -14,17 +14,38 @@ npx -y notion-bank-mcp
 
 ---
 
-**Contents:** [Setup](#how-do-i-set-up-notion-bank-mcp) · [Flow](#what-does-the-agent-flow-look-like) · [Tools](#what-tools-are-available) · [Config](#where-is-configuration-stored) · [Security](#what-about-secrets-and-security) · [Operator](#optional-hosted-url) · [FAQ](#faq)
+**Contents:** [Why](#why-use-notion-bank-mcp) · [Compare](#how-does-notion-bank-mcp-compare) · [Setup](#how-do-i-set-up-notion-bank-mcp) · [Flow](#what-does-the-agent-flow-look-like) · [Tools](#what-tools-are-available) · [Config](#where-is-configuration-stored) · [Security](#what-about-secrets-and-security) · [Operator](#optional-hosted-url) · [FAQ](#faq)
+
+## Why use notion-bank-mcp?
+
+Generic Notion MCPs are great for browsing a workspace. **notion-bank-mcp** is optimized for one job: keep **implementation plans** in Notion in a shape agents can reliably create, revise, and ship — without throwaway scripts.
+
+| Advantage | What you get |
+|-----------|----------------|
+| **Plan-bank domain** | First-class hierarchy: Plans root → service page → plan page. Agents follow one flow instead of inventing page structure every time. |
+| **Surgical edits** | `plan_update_range` edits by **section** or **line range**, with `expected_etag` so concurrent overwrites fail safely. |
+| **Markdown in / Markdown out** | Upsert from file or string; `plan_get` returns numbered lines + TOC so the model can point at exact slices. |
+| **No temp glue** | Stop generating one-off Python/shell to patch Notion. The MCP *is* the stable API for plan migrate/sync. |
+| **Zero secrets for end users** | Install with `npx` only. Browser OAuth via `mcp.notion.com` — no `CLIENT_ID`, no integration token in `mcp.json`. |
+| **Per-user workspace mapping** | Each machine stores Plans root + service map under `~/.config/notion-bank/` — no shared workspace IDs in the repo. |
+| **Agent-ready first steps** | `plan_status` → OAuth if needed → ask for Plans root once → ready. Predictable for Cursor / Claude / other MCP hosts. |
+| **Search with line hits** | `plan_search` surfaces matches in context of the plan body, not only page titles. |
+| **Optional export** | `plan_sync` pulls Notion → local markdown when you want a file in git or a PR. |
+
+**When to prefer this over the official Notion MCP alone:** you maintain a **plan bank** across services, you need **section-level** revisions with concurrency checks, and you want agents to do that in one tool surface instead of free-form page updates.
 
 ## How does notion-bank-mcp compare?
 
 | Feature | notion-bank-mcp | Hosted Notion MCP (`mcp.notion.com`) |
 |---|---|---|
 | **Focus** | Plan bank: hierarchy, migrate, surgical section edits | General workspace tools |
+| **Best for** | Implementation plans agents create & revise repeatedly | Browse / edit any Notion content |
 | **Content format** | Markdown + line numbers / TOC / etag | Enhanced markdown tools |
 | **Install for users** | `npx` / `command` (stdio) | MCP `url` |
 | **User secrets in mcp.json** | ❌ None | ❌ None (host OAuth) |
+| **Plans → service → plan hierarchy** | ✅ `plan_configure` / `plan_ensure_service` | ❌ DIY with generic tools |
 | **`plan_update_range` + etag** | ✅ | ❌ (generic update tools) |
+| **Local markdown sync** | ✅ `plan_upsert` / `plan_sync` | Partial / manual |
 
 ## How do I set up notion-bank-mcp?
 
