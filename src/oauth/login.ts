@@ -231,6 +231,7 @@ async function handleCallback(
       refresh_token: tokens.refresh_token,
       token_type: tokens.token_type,
       workspace_name,
+      expires_in: tokens.expires_in,
     });
     res
       .writeHead(200, { "Content-Type": "text/html" })

@@ -15,16 +15,18 @@ import {
 import {
   applyWorkspaceToConfig,
   etagOf,
+  pageUrl,
   requireNotionToken,
   requireRootPageId,
   type NotionBankConfig,
 } from "../config.js";
 
 import { log } from "../logging.js";
-import { updatePageMarkdownExact } from "../notion/ops.js";
+import { createPageWithMarkdown, updatePageMarkdownExact } from "../notion/ops.js";
 import {
   configureWorkspace,
   getConfigStatus,
+  normalizePageId,
   NOT_CONFIGURED_MESSAGE,
 } from "../user-config.js";
 
@@ -84,6 +86,20 @@ async function ensureAuth(
 ): Promise<void> {
   const { syncAuthFromDisk } = await import("../runtime.js");
   await syncAuthFromDisk(runtime);
+
+  // Proactively refresh before Notion rejects an expired access token.
+  if (
+    !isHttpOauthMode(runtime) &&
+    runtime.config.authSource === "oauth" &&
+    runtime.config.notionToken
+  ) {
+    const { ensureFreshOAuthToken } = await import("../oauth/client.js");
+    const refreshed = await ensureFreshOAuthToken();
+    if (refreshed) {
+      await syncAuthFromDisk(runtime);
+    }
+  }
+
   if (runtime.config.notionToken) return;
   if (isHttpOauthMode(runtime)) {
     throw new Error(
@@ -106,6 +122,14 @@ async function assertReady(
 ): Promise<void> {
   await ensureAuth(runtime);
   requireRootPageId(runtime.config);
+  requireNotionToken(runtime.config);
+}
+
+/** Auth only — for tools that accept an arbitrary parent page id. */
+async function assertAuth(
+  runtime: import("../runtime.js").Runtime,
+): Promise<void> {
+  await ensureAuth(runtime);
   requireNotionToken(runtime.config);
 }
 
@@ -388,6 +412,75 @@ export function registerTools(
             ? new Error(NOT_CONFIGURED_MESSAGE)
             : err,
         );
+      }
+    },
+  );
+
+  server.registerTool(
+    "plan_create_child",
+    {
+      description:
+        "Create a Notion subpage under any parent page (UUID or URL). Use when the user gives a page id/URL and asks for a child under it — does not require plan_configure. For the usual Plans→service→plan bank, prefer plan_ensure_service + plan_upsert.",
+      inputSchema: z.object({
+        parent_page_id: z
+          .string()
+          .optional()
+          .describe("Parent Notion page UUID (with or without dashes)"),
+        parent_page_url: z
+          .string()
+          .optional()
+          .describe("Full Notion URL of the parent page"),
+        title: z.string().describe("Title of the new child page"),
+        markdown: z
+          .string()
+          .optional()
+          .describe("Optional initial markdown body (default: empty)"),
+        dry_run: z.boolean().optional(),
+      }),
+    },
+    async ({ parent_page_id, parent_page_url, title, markdown, dry_run }) => {
+      try {
+        await assertAuth(runtime);
+        const parentInput = parent_page_id || parent_page_url;
+        if (!parentInput) {
+          throw new Error(
+            "parent_page_id or parent_page_url is required. Pass the page that should own the new subpage.",
+          );
+        }
+        const parentId = normalizePageId(parentInput);
+        const body = markdown?.trim() ? markdown : "";
+        if (dry_run) {
+          return textResult({
+            dryRun: true,
+            parent_page_id: parentId,
+            title,
+            markdown_chars: body.length,
+          });
+        }
+        const created = await createPageWithMarkdown(
+          notion(),
+          parentId,
+          title,
+          body || `# ${title}\n`,
+        );
+        catalog().cache.invalidatePrefix("plans:");
+        catalog().cache.invalidatePrefix("services:");
+        const url = pageUrl(created.id);
+        log.info("Created child page", {
+          parent: parentId,
+          page_id: created.id,
+          title,
+        });
+        return textResult({
+          ok: true,
+          parent_page_id: parentId,
+          page_id: created.id,
+          title,
+          url,
+          etag: etagOf(body || `# ${title}\n`),
+        });
+      } catch (err) {
+        return errorResult(err);
       }
     },
   );

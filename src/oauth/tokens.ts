@@ -7,7 +7,6 @@ import {
   unlinkSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
 import { configPath } from "../user-config.js";
 
 export type OAuthTokens = {
@@ -19,6 +18,8 @@ export type OAuthTokens = {
   workspace_name?: string | null;
   /** ISO time when tokens were saved / last refreshed */
   obtained_at: string;
+  /** epoch ms when access_token expires (from expires_in); optional for older files */
+  expires_at?: number | null;
 };
 
 function credentialsPath(): string {
@@ -46,17 +47,35 @@ export function loadOAuthTokens(): OAuthTokens | null {
       workspace_id: raw.workspace_id,
       workspace_name: raw.workspace_name ?? null,
       obtained_at: raw.obtained_at ?? new Date().toISOString(),
+      expires_at:
+        typeof raw.expires_at === "number" && Number.isFinite(raw.expires_at)
+          ? raw.expires_at
+          : null,
     };
   } catch {
     return null;
   }
 }
 
+export function expiresAtFromExpiresIn(expiresInSec?: number): number | null {
+  if (typeof expiresInSec !== "number" || !Number.isFinite(expiresInSec)) {
+    return null;
+  }
+  return Date.now() + Math.max(0, expiresInSec) * 1000;
+}
+
 export function saveOAuthTokens(
-  tokens: Omit<OAuthTokens, "obtained_at"> & { obtained_at?: string },
+  tokens: Omit<OAuthTokens, "obtained_at"> & {
+    obtained_at?: string;
+    expires_in?: number;
+  },
 ): OAuthTokens {
   const path = credentialsPath();
   mkdirSync(dirname(path), { recursive: true });
+  const expires_at =
+    tokens.expires_at !== undefined
+      ? tokens.expires_at
+      : expiresAtFromExpiresIn(tokens.expires_in);
   const saved: OAuthTokens = {
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token ?? null,
@@ -65,6 +84,7 @@ export function saveOAuthTokens(
     workspace_id: tokens.workspace_id,
     workspace_name: tokens.workspace_name ?? null,
     obtained_at: tokens.obtained_at ?? new Date().toISOString(),
+    expires_at,
   };
   writeFileSync(path, JSON.stringify(saved, null, 2) + "\n", { mode: 0o600 });
   try {

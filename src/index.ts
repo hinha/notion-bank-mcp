@@ -26,7 +26,7 @@ async function startStdio(): Promise<void> {
   const server = new McpServer(
     {
       name: "notion-bank-mcp",
-      version: "1.4.0",
+      version: "1.4.3",
     },
     {
       instructions: SERVER_INSTRUCTIONS,

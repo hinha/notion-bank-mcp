@@ -236,12 +236,42 @@ function toolText(result: {
   return text;
 }
 
+export type NotionMcpBridgeOptions = {
+  /**
+   * Called when Notion rejects the access token. Return a fresh access token
+   * to retry once, or null to surface the original error.
+   */
+  onUnauthorized?: () => Promise<string | null>;
+};
+
+function looksLikeAuthFailure(message: string): boolean {
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("invalid auth token") ||
+    msg.includes("invalid_token") ||
+    msg.includes("unauthorized") ||
+    msg.includes("authentication required") ||
+    msg.includes("not authenticated") ||
+    /\b401\b/.test(msg) ||
+    (msg.includes("expired") && msg.includes("token"))
+  );
+}
+
 /** Thin client: call Notion hosted MCP tools with a user access token. */
 export class NotionMcpBridge {
   private client: Client | null = null;
   private transport: StreamableHTTPClientTransport | null = null;
+  private accessToken: string;
+  private readonly onUnauthorized?: () => Promise<string | null>;
 
-  constructor(private accessToken: string) {}
+  constructor(accessToken: string, opts?: NotionMcpBridgeOptions) {
+    this.accessToken = accessToken;
+    this.onUnauthorized = opts?.onUnauthorized;
+  }
+
+  setAccessToken(token: string): void {
+    this.accessToken = token;
+  }
 
   private async connect(): Promise<Client> {
     if (this.client) return this.client;
@@ -257,7 +287,7 @@ export class NotionMcpBridge {
     );
     const client = new Client({
       name: "notion-bank-mcp",
-      version: "1.4.0",
+      version: "1.4.3",
     });
     await client.connect(transport);
     this.transport = transport;
@@ -275,7 +305,7 @@ export class NotionMcpBridge {
     this.transport = null;
   }
 
-  private async call(
+  private async callOnce(
     names: string[],
     args: Record<string, unknown>,
   ): Promise<string> {
@@ -304,6 +334,32 @@ export class NotionMcpBridge {
       }
     }
     throw lastErr ?? new Error(`No matching Notion MCP tool: ${names.join(",")}`);
+  }
+
+  private async call(
+    names: string[],
+    args: Record<string, unknown>,
+  ): Promise<string> {
+    try {
+      return await this.callOnce(names, args);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!looksLikeAuthFailure(message) || !this.onUnauthorized) {
+        throw err;
+      }
+      log.warn("Notion MCP auth failed; attempting token refresh", {
+        err: message.slice(0, 200),
+      });
+      const next = await this.onUnauthorized();
+      if (!next) {
+        throw new Error(
+          `${message} — token refresh failed. Run plan_oauth_login again.`,
+        );
+      }
+      this.accessToken = next;
+      await this.close();
+      return await this.callOnce(names, args);
+    }
   }
 
   async fetch(id: string): Promise<string> {

@@ -141,6 +141,7 @@ Plans / Superpowers          ← root (plan_configure)
 | `plan_oauth_login` / `plan_oauth_wait` / `plan_oauth_logout` | Browser OAuth lifecycle |
 | `plan_configure` | Persist Plans root (+ optional service map) |
 | `plan_ensure_service` | Ensure service page under root |
+| `plan_create_child` | Create a subpage under any parent page id/URL |
 | `plan_upsert` / `plan_migrate` | Create/update plan from markdown or file |
 | `plan_get` | Read with optional `L00N\|` lines, TOC, etag |
 | `plan_update_range` | Surgical edit by section / lines + `expected_etag` |
@@ -191,6 +192,10 @@ No for the default path. Browser OAuth is enough.
 ### Why did `127.0.0.1` refuse the connection during login?
 
 Some MCP hosts restart the stdio process right after a tool returns. This server persists pending OAuth to disk and re-binds the callback on process start. Retry `plan_oauth_login` if needed and keep the client open until you see “notion-bank connected”.
+
+### Why do I see `Invalid auth token` after a few hours?
+
+Access tokens from `mcp.notion.com` expire (typically ~8 hours). notion-bank-mcp stores `refresh_token` + `expires_at` and **refreshes automatically** (before expiry and on auth errors). If refresh itself fails (revoked session), run `plan_oauth_login` once more.
 
 ### Can I share one config across machines via git?
 
