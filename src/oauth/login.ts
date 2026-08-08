@@ -6,30 +6,19 @@
  * http://127.0.0.1:8765/callback.
  */
 import { randomBytes } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  unlinkSync,
-} from "node:fs";
-import {
-  createServer,
-  type IncomingMessage,
-  type Server,
-  type ServerResponse,
-} from "node:http";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { homedir } from "node:os";
-import { openBrowserIfEnabled } from "./browser.js";
-import { saveOAuthTokens, type OAuthTokens } from "./tokens.js";
+import { dirname, join } from "node:path";
+import { log } from "../logging.js";
 import {
   buildNotionMcpAuthorizeUrl,
   exchangeNotionMcpCode,
-  newPkce,
   NotionMcpBridge,
+  newPkce,
 } from "../notion/mcp-upstream.js";
-import { log } from "../logging.js";
+import { openBrowserIfEnabled } from "./browser.js";
+import { type OAuthTokens, saveOAuthTokens } from "./tokens.js";
 
 export type LoginResult = {
   ok: true;
@@ -60,9 +49,7 @@ let pending: Pending | null = null;
 let callbackServer: Server | null = null;
 let callbackListening = false;
 
-const LOCAL_CALLBACK_PORT = Number(
-  process.env.NOTION_BANK_LOCAL_CALLBACK_PORT || 8765,
-);
+const LOCAL_CALLBACK_PORT = Number(process.env.NOTION_BANK_LOCAL_CALLBACK_PORT || 8765);
 
 function localCallbackUri(): string {
   return `http://127.0.0.1:${LOCAL_CALLBACK_PORT}/callback`;
@@ -165,9 +152,7 @@ async function workspaceName(accessToken: string): Promise<string | null> {
     const bridge = new NotionMcpBridge(accessToken);
     const self = await bridge.fetch("self");
     await bridge.close();
-    const m =
-      self.match(/"name"\s*:\s*"([^"]+)"/) ||
-      self.match(/workspace[^"]*"([^"]+)"/i);
+    const m = self.match(/"name"\s*:\s*"([^"]+)"/) || self.match(/workspace[^"]*"([^"]+)"/i);
     return m?.[1] ?? null;
   } catch {
     return null;
@@ -180,10 +165,7 @@ function html(title: string, body: string): string {
 </head><body><h1>${title}</h1><p>${body}</p></body></html>`;
 }
 
-async function handleCallback(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
+async function handleCallback(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const u = new URL(req.url || "/", `http://127.0.0.1:${LOCAL_CALLBACK_PORT}`);
   if (u.pathname !== "/callback") {
     res.writeHead(404).end("Not found");
@@ -235,20 +217,13 @@ async function handleCallback(
     });
     res
       .writeHead(200, { "Content-Type": "text/html" })
-      .end(
-        html(
-          "notion-bank connected",
-          "You can close this tab and return to Cursor.",
-        ),
-      );
+      .end(html("notion-bank connected", "You can close this tab and return to Cursor."));
     pending.resolveDone(saved);
     clearPendingMemory("success");
     clearPendingFile();
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    res
-      .writeHead(500, { "Content-Type": "text/html" })
-      .end(html("Failed", message));
+    res.writeHead(500, { "Content-Type": "text/html" }).end(html("Failed", message));
     pending.rejectDone(e instanceof Error ? e : new Error(message));
     clearPendingMemory("error");
     clearPendingFile();
@@ -361,12 +336,15 @@ export async function startOAuthLoginAsync(opts?: {
     rejectDone,
   };
 
-  const timer = setTimeout(() => {
-    if (!pending || pending.state !== state) return;
-    pending.rejectDone(new Error("OAuth timed out"));
-    clearPendingMemory("timeout");
-    clearPendingFile();
-  }, opts?.timeout_ms ?? 10 * 60 * 1000);
+  const timer = setTimeout(
+    () => {
+      if (!pending || pending.state !== state) return;
+      pending.rejectDone(new Error("OAuth timed out"));
+      clearPendingMemory("timeout");
+      clearPendingFile();
+    },
+    opts?.timeout_ms ?? 10 * 60 * 1000,
+  );
   void done.finally(() => clearTimeout(timer));
 
   if (opts?.open_browser !== false) {
@@ -395,20 +373,25 @@ export async function waitOAuthLogin(timeoutMs?: number): Promise<LoginResult> {
     throw new Error("No pending OAuth. Call plan_oauth_login first.");
   }
   const p = pending;
-  const tokens = await Promise.race([
-    p.done,
-    new Promise<never>((_, reject) => {
-      if (!timeoutMs) return;
-      setTimeout(() => reject(new Error("OAuth wait timed out")), timeoutMs);
-    }),
-  ]);
-  return {
-    ok: true,
-    tokens: summarize(tokens),
-    authorize_url: p.authorize_url,
-    redirect_uri: p.redirect_uri,
-    via: "mcp.notion.com",
-  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const tokens = await Promise.race([
+      p.done,
+      new Promise<never>((_, reject) => {
+        if (!timeoutMs) return;
+        timer = setTimeout(() => reject(new Error("OAuth wait timed out")), timeoutMs);
+      }),
+    ]);
+    return {
+      ok: true,
+      tokens: summarize(tokens),
+      authorize_url: p.authorize_url,
+      redirect_uri: p.redirect_uri,
+      via: "mcp.notion.com",
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function runOAuthLoginFlow(opts?: {
