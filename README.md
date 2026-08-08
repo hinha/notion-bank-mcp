@@ -14,7 +14,7 @@ npx -y notion-bank-mcp
 
 ---
 
-**Contents:** [Why](#why-use-notion-bank-mcp) · [Compare](#how-does-notion-bank-mcp-compare) · [Setup](#how-do-i-set-up-notion-bank-mcp) · [Flow](#what-does-the-agent-flow-look-like) · [Tools](#what-tools-are-available) · [Config](#where-is-configuration-stored) · [Security](#what-about-secrets-and-security) · [Operator](#optional-hosted-url) · [FAQ](#faq)
+**Contents:** [Why](#why-use-notion-bank-mcp) · [Compare](#how-does-notion-bank-mcp-compare) · [Setup](#how-do-i-set-up-notion-bank-mcp) · [CLI](#cli) · [Flow](#what-does-the-agent-flow-look-like) · [Tools](#what-tools-are-available) · [Skills](#skills) · [Config](#where-is-configuration-stored) · [Security](#what-about-secrets-and-security) · [Operator](#optional-hosted-url) · [Developers](#developers) · [FAQ](#faq)
 
 ## Why use notion-bank-mcp?
 
@@ -100,12 +100,30 @@ Or:
 
 (`npm install && npm run build` first for the `node dist` form.)
 
+Check / update the CLI:
+
+```bash
+npx -y notion-bank-mcp --version
+notion-bank-mcp update          # checks npm only — does not auto-install
+notion-bank-mcp --help
+```
+
 ### First-time use
 
 1. Enable the MCP in your client  
 2. On the first Notion action, a **browser** opens → sign in with Notion (`mcp.notion.com`)  
 3. Tell the agent your **Plans root** Notion page URL once → it runs `plan_configure`  
 4. Use `plan_upsert` / `plan_get` / `plan_update_range` as usual  
+
+## CLI
+
+| Command | Purpose |
+|---------|---------|
+| `(default)` / `--stdio` | MCP over stdio (hosts) |
+| `serve` / `--http` | Streamable HTTP (optional hosted URL) |
+| `version` / `--version` / `-V` | Print package version |
+| `update` | Compare local version to npm `latest` |
+| `help` / `--help` / `-h` | Short usage |
 
 ## What does the agent flow look like?
 
@@ -148,6 +166,23 @@ Plans / Superpowers          ← root (plan_configure)
 | `plan_search` | Search with line hits |
 | `plan_sync` | Export Notion plan → local markdown |
 
+## Skills
+
+MCP tools and **skills** are separate. The skill teaches the agent *when/how* to document in Notion; the server only registers tools.
+
+Shipped skill: `skills/notion-bank/SKILL.md`  
+Slash name: `/notion-bank`
+
+Copy into your host skills directory (with notion-bank MCP enabled):
+
+| Host | Typical path |
+|------|----------------|
+| **Cursor** | `.cursor/skills/notion-bank/` or user skills |
+| **Claude Code** | `.claude/skills/notion-bank/` |
+| **Codex / agents** | `.agents/skills/notion-bank/` |
+
+The skill chains `superpowers` (brainstorming → writing-plans) and `optimize-goal` when applicable, uses an in-skill engineering checklist (not health `goal-analyzer`), and always returns the Notion URL.
+
 ## Where is configuration stored?
 
 All of this is **outside the git repo** (per user / machine):
@@ -172,15 +207,17 @@ Overrides (optional): `NOTION_BANK_CONFIG_PATH`, `NOTION_BANK_CREDENTIALS_PATH`,
 
 For teams that want `"url": "https://host/mcp"` instead of stdio, operators can run `npm run serve`. Details: [docs/OPERATOR.md](docs/OPERATOR.md). **Not** required for normal users.
 
-## Development
+## Developers
 
 ```bash
 git clone https://github.com/hinha/notion-bank-mcp.git
 cd notion-bank-mcp
-npm install
-npm run build
-npm test
-npm run stdio    # or: node dist/index.js
+make install
+make check          # typecheck + biome + tests (coverage fail <75%, warn <90%)
+make build
+make stdio          # or: node dist/index.js
+make release VERSION=1.4.4   # bump package.json, commit, annotated tag v1.4.4
+git push && git push origin v1.4.4   # triggers GitHub Actions → npm publish
 ```
 
 ## FAQ
