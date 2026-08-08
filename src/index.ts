@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { matchInfoCommand, runInfoCommand } from "./cli/info.js";
 import { loadConfig } from "./config.js";
-import { createRuntime } from "./runtime.js";
-import { registerTools } from "./tools/register.js";
-import { registerPrompts, registerResources } from "./tools/meta.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { log } from "./logging.js";
+import { getPackageVersion } from "./package-meta.js";
+import { createRuntime } from "./runtime.js";
+import { registerPrompts, registerResources } from "./tools/meta.js";
+import { registerTools } from "./tools/register.js";
 
 /** End users: stdio (Cursor starts the process). `serve` is only for optional hosted URL. */
 function wantsHttp(argv: string[]): boolean {
@@ -26,7 +28,7 @@ async function startStdio(): Promise<void> {
   const server = new McpServer(
     {
       name: "notion-bank-mcp",
-      version: "1.4.3",
+      version: getPackageVersion(),
     },
     {
       instructions: SERVER_INSTRUCTIONS,
@@ -47,6 +49,11 @@ async function startStdio(): Promise<void> {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  const info = matchInfoCommand(argv);
+  if (info) {
+    const code = await runInfoCommand(info);
+    process.exit(code);
+  }
   if (wantsHttp(argv)) {
     const { startHttpServer } = await import("./http/server.js");
     await startHttpServer();
