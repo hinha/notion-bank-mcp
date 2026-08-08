@@ -1,4 +1,4 @@
-import { NotionMcpBridge } from "./mcp-upstream.js";
+import type { NotionMcpBridge } from "./mcp-upstream.js";
 
 export type ChildPage = {
   id: string;
@@ -51,9 +51,7 @@ export function parsePageTitle(fetchText: string, fallback: string): string {
   const titleTag = unwrapped.body.match(/<page[^>]*title="([^"]+)"/i);
   if (titleTag?.[1]) return titleTag[1];
 
-  const props = unwrapped.body.match(
-    /<properties>\s*\{[^}]*"title"\s*:\s*"([^"]+)"/i,
-  );
+  const props = unwrapped.body.match(/<properties>\s*\{[^}]*"title"\s*:\s*"([^"]+)"/i);
   if (props?.[1]) return props[1];
 
   const h1 = unwrapped.body.match(/^#\s+(.+)$/m);
@@ -104,9 +102,7 @@ function unwrapFetchPayload(fetchText: string): UnwrappedFetch {
         markdown?: unknown;
       };
       const jsonTitle =
-        typeof parsed.title === "string" && parsed.title.trim()
-          ? parsed.title.trim()
-          : null;
+        typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : null;
       const inner =
         typeof parsed.text === "string"
           ? parsed.text
@@ -126,13 +122,13 @@ function unwrapFetchPayload(fetchText: string): UnwrappedFetch {
 function extractContentTag(body: string): string | null {
   const match = body.match(/<content>([\s\S]*?)<\/content>/i);
   if (!match) return null;
-  return match[1].replace(/^\n+/, "").replace(/\n+$/, "") + "\n";
+  return `${match[1].replace(/^\n+/, "").replace(/\n+$/, "")}\n`;
 }
 
 function extractFromFirstHeading(body: string): string | null {
   const match = body.match(/(^|\n)(#\s+[^\n]+[\s\S]*)$/);
   if (!match) return null;
-  return match[2].replace(/^\n+/, "").replace(/\n+$/, "") + "\n";
+  return `${match[2].replace(/^\n+/, "").replace(/\n+$/, "")}\n`;
 }
 
 /**
@@ -150,7 +146,7 @@ export function markdownFromFetch(fetchText: string): string {
   if (openContent && !body.includes("</content>")) {
     let md = openContent[1];
     md = md.replace(/<\/page>\s*$/i, "");
-    return md.replace(/^\n+/, "").replace(/\n+$/, "") + "\n";
+    return `${md.replace(/^\n+/, "").replace(/\n+$/, "")}\n`;
   }
 
   const fromHeading = extractFromFirstHeading(body);
@@ -158,7 +154,7 @@ export function markdownFromFetch(fetchText: string): string {
 
   // Already plain markdown (or unknown shape)
   if (body.trimStart().startsWith("#")) {
-    return body.replace(/^\n+/, "").replace(/\n+$/, "") + "\n";
+    return `${body.replace(/^\n+/, "").replace(/\n+$/, "")}\n`;
   }
 
   return body;
@@ -177,18 +173,12 @@ export async function listChildPages(
   return parseChildPages(fetched).filter((p) => p.id !== parentPageId);
 }
 
-export async function getPageTitle(
-  bridge: NotionMcpBridge,
-  pageId: string,
-): Promise<string> {
+export async function getPageTitle(bridge: NotionMcpBridge, pageId: string): Promise<string> {
   const text = await bridge.fetch(pageId);
   return parsePageTitle(text, pageId);
 }
 
-export async function retrieveMarkdown(
-  bridge: NotionMcpBridge,
-  pageId: string,
-): Promise<string> {
+export async function retrieveMarkdown(bridge: NotionMcpBridge, pageId: string): Promise<string> {
   const text = await bridge.fetch(pageId);
   return markdownFromFetch(text);
 }

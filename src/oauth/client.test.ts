@@ -1,9 +1,6 @@
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import {
-  accessTokenNeedsRefresh,
-  isInvalidAuthError,
-} from "./client.js";
+import { describe, it } from "node:test";
+import { accessTokenNeedsRefresh, isInvalidAuthError } from "./client.js";
 import type { OAuthTokens } from "./tokens.js";
 
 describe("isInvalidAuthError", () => {

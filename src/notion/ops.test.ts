@@ -1,9 +1,6 @@
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import {
-  markdownFromFetch,
-  parsePageTitle,
-} from "./ops.js";
+import { describe, it } from "node:test";
+import { markdownFromFetch, parsePageTitle } from "./ops.js";
 
 const SAMPLE_INNER = `Here is the result of "view" for the Page with URL https://app.notion.com/p/abc as of 2026-07-15T13:43:58.485Z:
 <page url="https://app.notion.com/p/abc">
@@ -55,8 +52,7 @@ describe("markdownFromFetch", () => {
   });
 
   it("falls back to first markdown heading when no content tag", () => {
-    const raw =
-      "Preface chrome\n\n# Title Only\n\nParagraph after.\n";
+    const raw = "Preface chrome\n\n# Title Only\n\nParagraph after.\n";
     const md = markdownFromFetch(raw);
     assert.match(md, /^# Title Only/);
     assert.match(md, /Paragraph after/);
@@ -65,16 +61,10 @@ describe("markdownFromFetch", () => {
 
 describe("parsePageTitle", () => {
   it("prefers JSON title field", () => {
-    assert.equal(
-      parsePageTitle(SAMPLE_JSON, "fallback"),
-      "Design: Notion Bank MCP",
-    );
+    assert.equal(parsePageTitle(SAMPLE_JSON, "fallback"), "Design: Notion Bank MCP");
   });
 
   it("reads properties title from enhanced markdown", () => {
-    assert.equal(
-      parsePageTitle(SAMPLE_INNER, "fallback"),
-      "Design: Notion Bank MCP",
-    );
+    assert.equal(parsePageTitle(SAMPLE_INNER, "fallback"), "Design: Notion Bank MCP");
   });
 });

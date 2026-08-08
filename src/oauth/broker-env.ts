@@ -3,10 +3,7 @@ import { resolve } from "node:path";
 
 /** Load .env for the broker process only (secrets stay on the broker host). */
 export function loadDotEnvForBroker(): void {
-  const candidates = [
-    resolve(process.cwd(), ".env"),
-    resolve(import.meta.dirname, "../../.env"),
-  ];
+  const candidates = [resolve(process.cwd(), ".env"), resolve(import.meta.dirname, "../../.env")];
   for (const file of candidates) {
     if (!existsSync(file)) continue;
     const text = readFileSync(file, "utf8");

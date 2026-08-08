@@ -8,10 +8,11 @@
  *   GET  /oauth/callback                      → Notion redirect (exchange + session)
  *   GET  /oauth/session/:id                   → one-time token pickup (JSON)
  */
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+
 import { randomBytes } from "node:crypto";
-import { loadDotEnvForBroker } from "./broker-env.js";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { log } from "../logging.js";
+import { loadDotEnvForBroker } from "./broker-env.js";
 
 type SessionPayload = {
   access_token: string;
@@ -52,17 +53,13 @@ function requireApp(): {
   const clientId = process.env.NOTION_OAUTH_CLIENT_ID?.trim();
   const clientSecret = process.env.NOTION_OAUTH_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
-    throw new Error(
-      "Broker requires NOTION_OAUTH_CLIENT_ID and NOTION_OAUTH_CLIENT_SECRET",
-    );
+    throw new Error("Broker requires NOTION_OAUTH_CLIENT_ID and NOTION_OAUTH_CLIENT_SECRET");
   }
   const port = Number(process.env.NOTION_BANK_BROKER_PORT || 8787);
   const publicBase =
-    process.env.NOTION_BANK_BROKER_PUBLIC_URL?.replace(/\/$/, "") ||
-    `http://127.0.0.1:${port}`;
+    process.env.NOTION_BANK_BROKER_PUBLIC_URL?.replace(/\/$/, "") || `http://127.0.0.1:${port}`;
   const redirectUri =
-    process.env.NOTION_OAUTH_REDIRECT_URI?.trim() ||
-    `${publicBase}/oauth/callback`;
+    process.env.NOTION_OAUTH_REDIRECT_URI?.trim() || `${publicBase}/oauth/callback`;
   return { clientId, clientSecret, redirectUri };
 }
 
@@ -83,10 +80,7 @@ async function exchangeCode(
   workspace_id?: string;
   workspace_name?: string | null;
 }> {
-  const basic = Buffer.from(
-    `${app.clientId}:${app.clientSecret}`,
-    "utf8",
-  ).toString("base64");
+  const basic = Buffer.from(`${app.clientId}:${app.clientSecret}`, "utf8").toString("base64");
   const res = await fetch("https://api.notion.com/v1/oauth/token", {
     method: "POST",
     headers: {
@@ -102,9 +96,7 @@ async function exchangeCode(
   });
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok) {
-    throw new Error(
-      `token exchange failed: ${JSON.stringify(json).slice(0, 300)}`,
-    );
+    throw new Error(`token exchange failed: ${JSON.stringify(json).slice(0, 300)}`);
   }
   return json as {
     access_token: string;
@@ -121,10 +113,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-async function handler(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
+async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   prune();
   const url = new URL(req.url || "/", "http://127.0.0.1");
   const app = requireApp();
@@ -240,10 +229,7 @@ async function handler(
       return;
     }
     try {
-      const basic = Buffer.from(
-        `${app.clientId}:${app.clientSecret}`,
-        "utf8",
-      ).toString("base64");
+      const basic = Buffer.from(`${app.clientId}:${app.clientSecret}`, "utf8").toString("base64");
       const tokenRes = await fetch("https://api.notion.com/v1/oauth/token", {
         method: "POST",
         headers: {
@@ -317,5 +303,3 @@ export async function startBrokerServer(): Promise<void> {
       `  Clients use NOTION_BANK_OAUTH_BROKER_URL pointing at this host`,
   );
 }
-
-

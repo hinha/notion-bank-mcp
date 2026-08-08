@@ -1,8 +1,8 @@
+import { Catalog } from "./catalog.js";
 import type { NotionBankConfig } from "./config.js";
 import { reloadWorkspace } from "./config.js";
-import { Catalog } from "./catalog.js";
-import { NotionMcpBridge } from "./notion/mcp-upstream.js";
 import { log } from "./logging.js";
+import { NotionMcpBridge } from "./notion/mcp-upstream.js";
 import type { UserWorkspaceConfig } from "./user-config.js";
 
 export type Runtime = {
@@ -67,16 +67,11 @@ export async function syncAuthFromDisk(runtime: Runtime): Promise<void> {
 /**
  * Run a Notion-backed operation; on Invalid auth token, refresh OAuth once and retry.
  */
-export async function withAuthRetry<T>(
-  runtime: Runtime,
-  fn: () => Promise<T>,
-): Promise<T> {
+export async function withAuthRetry<T>(runtime: Runtime, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
-    const { isInvalidAuthError, tryRefreshOAuth } = await import(
-      "./oauth/client.js"
-    );
+    const { isInvalidAuthError, tryRefreshOAuth } = await import("./oauth/client.js");
     if (!isInvalidAuthError(err) || runtime.config.authSource !== "oauth") {
       throw err;
     }
@@ -86,9 +81,7 @@ export async function withAuthRetry<T>(
     const next = await tryRefreshOAuth();
     if (!next) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `${msg} — token refresh failed. Run plan_oauth_login again.`,
-      );
+      throw new Error(`${msg} — token refresh failed. Run plan_oauth_login again.`);
     }
     runtime.config.notionToken = next.access_token;
     runtime.config.authSource = "oauth";

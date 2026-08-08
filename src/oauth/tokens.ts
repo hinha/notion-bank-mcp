@@ -1,11 +1,4 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  unlinkSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { configPath } from "../user-config.js";
 
@@ -73,9 +66,7 @@ export function saveOAuthTokens(
   const path = credentialsPath();
   mkdirSync(dirname(path), { recursive: true });
   const expires_at =
-    tokens.expires_at !== undefined
-      ? tokens.expires_at
-      : expiresAtFromExpiresIn(tokens.expires_in);
+    tokens.expires_at !== undefined ? tokens.expires_at : expiresAtFromExpiresIn(tokens.expires_in);
   const saved: OAuthTokens = {
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token ?? null,
@@ -86,7 +77,7 @@ export function saveOAuthTokens(
     obtained_at: tokens.obtained_at ?? new Date().toISOString(),
     expires_at,
   };
-  writeFileSync(path, JSON.stringify(saved, null, 2) + "\n", { mode: 0o600 });
+  writeFileSync(path, `${JSON.stringify(saved, null, 2)}\n`, { mode: 0o600 });
   try {
     chmodSync(path, 0o600);
   } catch {

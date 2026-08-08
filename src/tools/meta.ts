@@ -4,10 +4,7 @@ import type { NotionBankConfig } from "../config.js";
 import { SERVER_INSTRUCTIONS, WORKFLOW_DOC } from "../instructions.js";
 import { configPath, getConfigStatus, loadUserConfig } from "../user-config.js";
 
-export function registerResources(
-  server: McpServer,
-  config: NotionBankConfig,
-): void {
+export function registerResources(server: McpServer, config: NotionBankConfig): void {
   server.registerResource(
     "workflow",
     "notion-bank://docs/workflow",
@@ -52,15 +49,12 @@ export function registerResources(
     "notion-bank://config",
     {
       title: "Current user config",
-      description:
-        "Per-user workspace config + status (no secrets). Path from plan_status.",
+      description: "Per-user workspace config + status (no secrets). Path from plan_status.",
       mimeType: "application/json",
     },
     async (uri) => {
       const { oauthAvailable } = await import("../oauth/login.js");
-      const { getCredentialsPath, loadOAuthTokens } = await import(
-        "../oauth/tokens.js"
-      );
+      const { getCredentialsPath, loadOAuthTokens } = await import("../oauth/tokens.js");
       const oauth = loadOAuthTokens();
       const avail = oauthAvailable();
       const status = getConfigStatus({
@@ -113,8 +107,7 @@ export function registerPrompts(server: McpServer): void {
     "save-plan",
     {
       title: "Save plan to Notion",
-      description:
-        "Guided flow: ensure configured, then upsert a plan under a service",
+      description: "Guided flow: ensure configured, then upsert a plan under a service",
       argsSchema: {
         service: z.string().describe("Service slug"),
         title: z.string().describe("Plan title"),

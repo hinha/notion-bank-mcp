@@ -1,16 +1,9 @@
 import { randomBytes } from "node:crypto";
-import {
-  clearOAuthTokens,
-  loadOAuthTokens,
-  saveOAuthTokens,
-  type OAuthTokens,
-} from "./tokens.js";
-import { refreshNotionMcpToken } from "../notion/mcp-upstream.js";
 import { log } from "../logging.js";
+import { refreshNotionMcpToken } from "../notion/mcp-upstream.js";
+import { clearOAuthTokens, loadOAuthTokens, type OAuthTokens, saveOAuthTokens } from "./tokens.js";
 
-const LOCAL_CALLBACK_PORT = Number(
-  process.env.NOTION_BANK_LOCAL_CALLBACK_PORT || 8765,
-);
+const LOCAL_CALLBACK_PORT = Number(process.env.NOTION_BANK_LOCAL_CALLBACK_PORT || 8765);
 
 /** Refresh this many ms before expires_at. */
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
@@ -38,10 +31,7 @@ export function oauthAppReady(): boolean {
   return true;
 }
 
-export function buildAuthorizeUrl(
-  _app: OAuthAppConfig,
-  _state: string,
-): string {
+export function buildAuthorizeUrl(_app: OAuthAppConfig, _state: string): string {
   throw new Error("Use mcp.notion.com OAuth via plan_oauth_login");
 }
 
@@ -67,9 +57,7 @@ export async function ensureAccessToken(
   if (envToken) {
     return { token: envToken, source: "env" };
   }
-  throw new Error(
-    "No Notion credentials. Call plan_oauth_login (browser opens automatically).",
-  );
+  throw new Error("No Notion credentials. Call plan_oauth_login (browser opens automatically).");
 }
 
 export function isInvalidAuthError(err: unknown): boolean {
