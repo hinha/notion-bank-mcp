@@ -1,91 +1,95 @@
 # notion-bank-mcp
 
-**Plan-bank MCP for AI agents and Notion.**  
-Agents read and write Markdown implementation plans with **line + section addressing** — no ad-hoc temp scripts.
+Plan-bank MCP for AI agents — read and write Markdown implementation plans in Notion with **line + section addressing**, for Cursor, Claude, Codex, and other MCP hosts.
 
-OAuth via [mcp.notion.com](https://mcp.notion.com) (browser) · zero `CLIENT_ID` / `SECRET` for end users · stdio install like other MCP servers
-
-[![license](https://img.shields.io/github/license/hinha/notion-bank-mcp)](LICENSE)
-[![node](https://img.shields.io/node/v/notion-bank-mcp)](package.json)
+**Auth:** browser OAuth via [mcp.notion.com](https://mcp.notion.com). No `CLIENT_ID` / `SECRET` for end users. No integration token in `mcp.json`.
 
 ```bash
-npx -y notion-bank-mcp
+npx -y notion-bank-mcp@latest --version
 ```
 
 ---
 
-**Contents:** [Why](#why-use-notion-bank-mcp) · [Compare](#how-does-notion-bank-mcp-compare) · [Setup](#how-do-i-set-up-notion-bank-mcp) · [CLI](#cli) · [Flow](#what-does-the-agent-flow-look-like) · [Tools](#what-tools-are-available) · [Skills](#skills) · [Config](#where-is-configuration-stored) · [Security](#what-about-secrets-and-security) · [Operator](#optional-hosted-url) · [Developers](#developers) · [FAQ](#faq)
+## Quick start
 
-## Why use notion-bank-mcp?
-
-Generic Notion MCPs are great for browsing a workspace. **notion-bank-mcp** is optimized for one job: keep **implementation plans** in Notion in a shape agents can reliably create, revise, and ship — without throwaway scripts.
-
-| Advantage | What you get |
-|-----------|----------------|
-| **Plan-bank domain** | First-class hierarchy: Plans root → service page → plan page. Agents follow one flow instead of inventing page structure every time. |
-| **Surgical edits** | `plan_update_range` edits by **section** or **line range**, with `expected_etag` so concurrent overwrites fail safely. |
-| **Markdown in / Markdown out** | Upsert from file or string; `plan_get` returns numbered lines + TOC so the model can point at exact slices. |
-| **No temp glue** | Stop generating one-off Python/shell to patch Notion. The MCP *is* the stable API for plan migrate/sync. |
-| **Zero secrets for end users** | Install with `npx` only. Browser OAuth via `mcp.notion.com` — no `CLIENT_ID`, no integration token in `mcp.json`. |
-| **Per-user workspace mapping** | Each machine stores Plans root + service map under `~/.config/notion-bank/` — no shared workspace IDs in the repo. |
-| **Agent-ready first steps** | `plan_status` → OAuth if needed → ask for Plans root once → ready. Predictable for Cursor / Claude / other MCP hosts. |
-| **Search with line hits** | `plan_search` surfaces matches in context of the plan body, not only page titles. |
-| **Optional export** | `plan_sync` pulls Notion → local markdown when you want a file in git or a PR. |
-
-**When to prefer this over the official Notion MCP alone:** you maintain a **plan bank** across services, you need **section-level** revisions with concurrency checks, and you want agents to do that in one tool surface instead of free-form page updates.
-
-## How does notion-bank-mcp compare?
-
-| Feature | notion-bank-mcp | Hosted Notion MCP (`mcp.notion.com`) |
-|---|---|---|
-| **Focus** | Plan bank: hierarchy, migrate, surgical section edits | General workspace tools |
-| **Best for** | Implementation plans agents create & revise repeatedly | Browse / edit any Notion content |
-| **Content format** | Markdown + line numbers / TOC / etag | Enhanced markdown tools |
-| **Install for users** | `npx` / `command` (stdio) | MCP `url` |
-| **User secrets in mcp.json** | ❌ None | ❌ None (host OAuth) |
-| **Plans → service → plan hierarchy** | ✅ `plan_configure` / `plan_ensure_service` | ❌ DIY with generic tools |
-| **`plan_update_range` + etag** | ✅ | ❌ (generic update tools) |
-| **Local markdown sync** | ✅ `plan_upsert` / `plan_sync` | Partial / manual |
-
-## How do I set up notion-bank-mcp?
-
-### Cursor / Claude / Windsurf / Codex
-
-Add to your MCP config (no env tokens required):
+1. Add this to your MCP config (Cursor example — same shape works for Claude Desktop / Codex):
 
 ```json
 {
   "mcpServers": {
     "notion-bank": {
       "command": "npx",
-      "args": ["-y", "notion-bank-mcp"]
+      "args": ["-y", "notion-bank-mcp@latest"]
     }
   }
 }
 ```
 
-**Cursor:** `.cursor/mcp.json` or Settings → MCP  
-**Claude Desktop:** `claude_desktop_config.json`  
-**Windsurf:** MCP config JSON  
+2. Restart the host. Tools like `plan_status` and `plan_upsert` should appear.
+3. On the first Notion action, a **browser** opens → sign in with Notion.
+4. Tell the agent your **Plans root** Notion page URL once → it runs `plan_configure`.
 
-From a local clone (before publishing to npm):
+That is enough for most users.
 
-```json
-{
-  "mcpServers": {
-    "notion-bank": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "--package=/absolute/path/to/notion-bank-mcp",
-        "notion-bank-mcp"
-      ]
-    }
-  }
-}
+---
+
+## Install options
+
+| Method | When to use |
+|--------|-------------|
+| `npx -y notion-bank-mcp@latest` | Recommended — always latest, no global install |
+| `npm i -g notion-bank-mcp` then `notion-bank-mcp` | Frequent local use |
+| Clone + `make build` | Developing the server itself |
+
+Check / update the CLI:
+
+```bash
+notion-bank-mcp --version          # or: notion-bank-mcp version
+notion-bank-mcp update             # checks npm only — does not auto-install
+notion-bank-mcp --help
 ```
 
-Or:
+If `update` reports a newer version:
+
+```bash
+npm i -g notion-bank-mcp@latest
+# or keep using npx -y notion-bank-mcp@latest
+```
+
+---
+
+## CLI
+
+| Command | Purpose |
+|---------|---------|
+| `(default)` / `--stdio` | MCP over stdio (hosts) |
+| `serve` / `--http` | Streamable HTTP (optional hosted URL) |
+| `version` / `--version` / `-V` | Print package version |
+| `update` | Compare local version to npm `latest` |
+| `help` / `--help` / `-h` | Short usage |
+
+### Env (optional)
+
+| Env | Description |
+|-----|-------------|
+| `NOTION_BANK_CONFIG_PATH` | Override path to `config.json` |
+| `NOTION_BANK_CREDENTIALS_PATH` | Override path to OAuth credentials |
+| `NOTION_BANK_CACHE_TTL_MS` | In-process cache TTL (default `60000`) |
+| `NOTION_BANK_CACHE_MAX_ENTRIES` | Cache LRU cap (default `256`) |
+| `NOTION_BANK_MODE` | Set `http` to force HTTP serve |
+| `NOTION_BANK_LOCAL_CALLBACK_PORT` | OAuth callback port (default `8765`) |
+
+HTTP-only (operators): `NOTION_BANK_PUBLIC_URL`, `NOTION_BANK_HOST`, `NOTION_BANK_PORT`, `NOTION_BANK_HTTP_IDLE_MS`. See [docs/OPERATOR.md](docs/OPERATOR.md).
+
+### Local from source
+
+```bash
+make install && make check && make build
+make stdio
+# or: node dist/index.js
+```
+
+From a local clone before publishing:
 
 ```json
 {
@@ -98,37 +102,24 @@ Or:
 }
 ```
 
-(`npm install && npm run build` first for the `node dist` form.)
+---
 
-Check / update the CLI:
+## Host compatibility
 
-```bash
-npx -y notion-bank-mcp --version
-notion-bank-mcp update          # checks npm only — does not auto-install
-notion-bank-mcp --help
-```
+Primary transport is **stdio**. Same `command` + `args` pattern as other MCP servers. **No env tokens required.**
 
-### First-time use
+| Host | Config | Notes |
+|------|--------|-------|
+| **Cursor** | `.cursor/mcp.json` or Settings → MCP | See `mcp.json.example` |
+| **Claude Desktop** | `claude_desktop_config.json` | Same `mcpServers` JSON |
+| **Claude Code** | MCP settings | Stdio; optional skill under `.claude/skills/` |
+| **Codex** | MCP / tools config | Same pattern |
+| **Windsurf / OpenCode** | MCP `command`/`args` | Prefer stdio |
 
-1. Enable the MCP in your client  
-2. On the first Notion action, a **browser** opens → sign in with Notion (`mcp.notion.com`)  
-3. Tell the agent your **Plans root** Notion page URL once → it runs `plan_configure`  
-4. Use `plan_upsert` / `plan_get` / `plan_update_range` as usual  
-
-## CLI
-
-| Command | Purpose |
-|---------|---------|
-| `(default)` / `--stdio` | MCP over stdio (hosts) |
-| `serve` / `--http` | Streamable HTTP (optional hosted URL) |
-| `version` / `--version` / `-V` | Print package version |
-| `update` | Compare local version to npm `latest` |
-| `help` / `--help` / `-h` | Short usage |
-
-## What does the agent flow look like?
+### Agent flow
 
 ```text
-npx notion-bank-mcp  (Cursor starts stdio)
+npx notion-bank-mcp@latest  (host starts stdio)
         │
         ▼
 plan_status
@@ -143,7 +134,7 @@ plan_status
 plan_upsert / plan_get / plan_update_range / …
 ```
 
-Suggested hierarchy:
+Hierarchy:
 
 ```text
 Plans / Superpowers          ← root (plan_configure)
@@ -151,7 +142,9 @@ Plans / Superpowers          ← root (plan_configure)
         └── <Plan title>     ← plan_upsert / plan_migrate
 ```
 
-## What tools are available?
+---
+
+## Tools
 
 | Tool | Purpose |
 |------|---------|
@@ -165,6 +158,39 @@ Plans / Superpowers          ← root (plan_configure)
 | `plan_update_range` | Surgical edit by section / lines + `expected_etag` |
 | `plan_search` | Search with line hits |
 | `plan_sync` | Export Notion plan → local markdown |
+
+## Resources
+
+- `notion-bank://docs/workflow`
+- `notion-bank://docs/instructions`
+- `notion-bank://config`
+
+## Config (per user / machine)
+
+Stored **outside the git repo**:
+
+| Path | Contents |
+|------|----------|
+| `~/.config/notion-bank/config.json` | Plans root + service map |
+| `~/.config/notion-bank/credentials.json` | OAuth access / refresh tokens |
+| `~/.config/notion-bank/oauth-pending.json` | Short-lived login state (auto-cleared) |
+
+Do **not** put Notion tokens or OAuth client secrets in the repo or in committed `mcp.json`. Access tokens expire (~8h); the server refreshes automatically when possible. If refresh fails, run `plan_oauth_login` again.
+
+---
+
+## HTTP serve
+
+Optional hosted URL mode for teams that want `"url": "https://host/mcp"` instead of stdio:
+
+```bash
+npm run serve
+# or: notion-bank-mcp serve
+```
+
+Details: [docs/OPERATOR.md](docs/OPERATOR.md). **Not** required for normal users.
+
+---
 
 ## Skills
 
@@ -181,63 +207,28 @@ Copy into your host skills directory (with notion-bank MCP enabled):
 | **Claude Code** | `.claude/skills/notion-bank/` |
 | **Codex / agents** | `.agents/skills/notion-bank/` |
 
-The skill chains `superpowers` (brainstorming → writing-plans) and `optimize-goal` when applicable, uses an in-skill engineering checklist (not health `goal-analyzer`), and always returns the Notion URL.
+The skill chains `superpowers` (brainstorming → writing-plans) and `optimize-goal` when applicable, uses an in-skill engineering checklist, and always returns the Notion URL.
 
-## Where is configuration stored?
-
-All of this is **outside the git repo** (per user / machine):
-
-| Path | Contents |
-|------|----------|
-| `~/.config/notion-bank/config.json` | Plans root + service map |
-| `~/.config/notion-bank/credentials.json` | OAuth access / refresh tokens |
-| `~/.config/notion-bank/oauth-pending.json` | Short-lived login state (auto-cleared) |
-
-Overrides (optional): `NOTION_BANK_CONFIG_PATH`, `NOTION_BANK_CREDENTIALS_PATH`, `XDG_CONFIG_HOME`.
-
-## What about secrets and security?
-
-- **Do not** put Notion tokens, OAuth client secrets, or PATs in this repository or in committed `mcp.json`.  
-- End-user auth is browser OAuth against Notion’s hosted MCP (`mcp.notion.com`) using Dynamic Client Registration — **no** `CLIENT_ID` / `CLIENT_SECRET` in user config.  
-- Tokens live only under `~/.config/notion-bank/` with restrictive file modes where possible.  
-- `.env` is gitignored; `.env.example` documents optional non-secret host knobs only.  
-- Prefer OS credential helpers / `gh auth login` for GitHub — avoid embedding tokens in `git remote` URLs.
-
-## Optional hosted URL
-
-For teams that want `"url": "https://host/mcp"` instead of stdio, operators can run `npm run serve`. Details: [docs/OPERATOR.md](docs/OPERATOR.md). **Not** required for normal users.
+---
 
 ## Developers
 
 ```bash
-git clone https://github.com/hinha/notion-bank-mcp.git
-cd notion-bank-mcp
-make install
 make check          # typecheck + biome + tests (coverage fail <75%, warn <90%)
-make build
-make stdio          # or: node dist/index.js
-make release VERSION=1.4.4   # bump package.json, commit, annotated tag v1.4.4
-git push && git push origin v1.4.4   # triggers GitHub Actions → npm publish
+make test-coverage
+make release VERSION=1.5.0   # bump package.json, commit, create annotated tag v1.5.0
+git push && git push origin v1.5.0   # triggers GitHub Actions → npm publish
 ```
 
-## FAQ
+**Coverage policy:** CI fails below **75%** (lines/statements/functions/branches). Below **90%** emits a warning annotation only.
 
-### Do I need a Notion internal integration token?
+**Release:** git tag `vX.Y.Z` is the source of truth. The release workflow syncs `package.json` version from the tag, runs checks, then `npm publish`. Requires repo secret `NPM_TOKEN`.
 
-No for the default path. Browser OAuth is enough.
+### Docs
 
-### Why did `127.0.0.1` refuse the connection during login?
-
-Some MCP hosts restart the stdio process right after a tool returns. This server persists pending OAuth to disk and re-binds the callback on process start. Retry `plan_oauth_login` if needed and keep the client open until you see “notion-bank connected”.
-
-### Why do I see `Invalid auth token` after a few hours?
-
-Access tokens from `mcp.notion.com` expire (typically ~8 hours). notion-bank-mcp stores `refresh_token` + `expires_at` and **refreshes automatically** (before expiry and on auth errors). If refresh itself fails (revoked session), run `plan_oauth_login` once more.
-
-### Can I share one config across machines via git?
-
-No — keep `~/.config/notion-bank/` private. Each user (or machine) runs OAuth + `plan_configure` once.
+- [OPERATOR.md](docs/OPERATOR.md)
+- [SECURITY.md](SECURITY.md)
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT
