@@ -1,10 +1,5 @@
-import {
-  etagOf,
-  pageUrl,
-  slugifyServiceName,
-  type NotionBankConfig,
-} from "./config.js";
-import { TtlCache } from "./cache.js";
+import { resolveCacheMaxEntries, TtlCache } from "./cache.js";
+import { etagOf, type NotionBankConfig, pageUrl, slugifyServiceName } from "./config.js";
 import { log } from "./logging.js";
 import type { NotionMcpBridge } from "./notion/mcp-upstream.js";
 import {
@@ -36,7 +31,7 @@ export class Catalog {
     private readonly notion: NotionMcpBridge,
     private readonly config: NotionBankConfig,
   ) {
-    this.cache = new TtlCache(config.cacheTtlMs);
+    this.cache = new TtlCache(config.cacheTtlMs, resolveCacheMaxEntries());
   }
 
   resolveKnownService(slug: string): string | undefined {
@@ -53,9 +48,7 @@ export class Catalog {
     }
 
     const children = await this.listServices(true);
-    const hit = children.find(
-      (c) => slugifyServiceName(c.title) === slug || c.slug === slug,
-    );
+    const hit = children.find((c) => slugifyServiceName(c.title) === slug || c.slug === slug);
     if (hit) {
       this.config.serviceMap[slug] = hit.pageId;
       return { slug, pageId: hit.pageId, title: hit.title };
@@ -64,9 +57,7 @@ export class Catalog {
     const title = humanizeSlug(slugOrName);
     const rootPageId = this.config.rootPageId;
     if (!rootPageId) {
-      throw new Error(
-        "Workspace not configured. Call plan_configure before ensuring a service.",
-      );
+      throw new Error("Workspace not configured. Call plan_configure before ensuring a service.");
     }
     log.info("Creating service page", { title, parent: rootPageId });
     const created = await createPageWithMarkdown(
@@ -81,30 +72,24 @@ export class Catalog {
     return { slug, pageId: created.id, title, created: true };
   }
 
-  async listServices(force = false): Promise<
-    Array<{ slug: string; pageId: string; title: string }>
-  > {
+  async listServices(
+    force = false,
+  ): Promise<Array<{ slug: string; pageId: string; title: string }>> {
     const key = "services:root";
     if (!force) {
-      const cached = this.cache.get<
-        Array<{ slug: string; pageId: string; title: string }>
-      >(key);
+      const cached = this.cache.get<Array<{ slug: string; pageId: string; title: string }>>(key);
       if (cached) return cached;
     }
 
-    const fromMap = Object.entries(this.config.serviceMap).map(
-      ([slug, pageId]) => ({
-        slug,
-        pageId,
-        title: humanizeSlug(slug),
-      }),
-    );
+    const fromMap = Object.entries(this.config.serviceMap).map(([slug, pageId]) => ({
+      slug,
+      pageId,
+      title: humanizeSlug(slug),
+    }));
 
     const rootPageId = this.config.rootPageId;
     if (!rootPageId) {
-      throw new Error(
-        "Workspace not configured. Call plan_configure before listing services.",
-      );
+      throw new Error("Workspace not configured. Call plan_configure before listing services.");
     }
     const children = await listChildPages(this.notion, rootPageId);
     const byId = new Map(fromMap.map((s) => [s.pageId, s]));
@@ -120,28 +105,19 @@ export class Catalog {
       }
     }
 
-    const list = [...byId.values()].sort((a, b) =>
-      a.title.localeCompare(b.title),
-    );
+    const list = [...byId.values()].sort((a, b) => a.title.localeCompare(b.title));
     this.cache.set(key, list);
     return list;
   }
 
-  async findPlan(
-    serviceSlug: string,
-    title: string,
-  ): Promise<PlanRef | null> {
+  async findPlan(serviceSlug: string, title: string): Promise<PlanRef | null> {
     const service = await this.ensureService(serviceSlug);
     const plans = await this.listPlans(service.pageId, service.slug);
     const exact = plans.find((p) => p.title === title);
     return exact ?? null;
   }
 
-  async listPlans(
-    servicePageId: string,
-    serviceSlug: string,
-    force = false,
-  ): Promise<PlanRef[]> {
+  async listPlans(servicePageId: string, serviceSlug: string, force = false): Promise<PlanRef[]> {
     const key = `plans:${servicePageId}`;
     if (!force) {
       const cached = this.cache.get<PlanRef[]>(key);
@@ -158,14 +134,9 @@ export class Catalog {
     return plans;
   }
 
-  async resolvePlan(args: {
-    service: string;
-    title?: string;
-    page_id?: string;
-  }): Promise<PlanRef> {
+  async resolvePlan(args: { service: string; title?: string; page_id?: string }): Promise<PlanRef> {
     if (args.page_id) {
-      const title =
-        args.title || (await this.cachedTitle(args.page_id)) || args.page_id;
+      const title = args.title || (await this.cachedTitle(args.page_id)) || args.page_id;
       return {
         service: slugifyServiceName(args.service),
         title,
@@ -202,9 +173,7 @@ export class Catalog {
     const existing = await this.findPlan(service.slug, args.title);
 
     if (existing && mode === "create_only") {
-      throw new Error(
-        `Plan already exists (create_only): ${existing.url}`,
-      );
+      throw new Error(`Plan already exists (create_only): ${existing.url}`);
     }
 
     if (args.dryRun) {

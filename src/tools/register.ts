@@ -1,4 +1,4 @@
-import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -15,22 +15,22 @@ import {
 import {
   applyWorkspaceToConfig,
   etagOf,
+  pageUrl,
   requireNotionToken,
   requireRootPageId,
-  type NotionBankConfig,
 } from "../config.js";
 
 import { log } from "../logging.js";
-import { updatePageMarkdownExact } from "../notion/ops.js";
+import { createPageWithMarkdown, updatePageMarkdownExact } from "../notion/ops.js";
 import {
   configureWorkspace,
   getConfigStatus,
   NOT_CONFIGURED_MESSAGE,
+  normalizePageId,
 } from "../user-config.js";
 
 function textResult(payload: unknown) {
-  const text =
-    typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
   return { content: [{ type: "text" as const, text }] };
 }
 
@@ -73,17 +73,27 @@ function formatGetOutput(args: {
   return `${header}\n${content}`;
 }
 
-function isHttpOauthMode(
-  runtime: import("../runtime.js").Runtime,
-): boolean {
+function isHttpOauthMode(runtime: import("../runtime.js").Runtime): boolean {
   return runtime.sessionMeta?.mode === "http-oauth";
 }
 
-async function ensureAuth(
-  runtime: import("../runtime.js").Runtime,
-): Promise<void> {
+async function ensureAuth(runtime: import("../runtime.js").Runtime): Promise<void> {
   const { syncAuthFromDisk } = await import("../runtime.js");
   await syncAuthFromDisk(runtime);
+
+  // Proactively refresh before Notion rejects an expired access token.
+  if (
+    !isHttpOauthMode(runtime) &&
+    runtime.config.authSource === "oauth" &&
+    runtime.config.notionToken
+  ) {
+    const { ensureFreshOAuthToken } = await import("../oauth/client.js");
+    const refreshed = await ensureFreshOAuthToken();
+    if (refreshed) {
+      await syncAuthFromDisk(runtime);
+    }
+  }
+
   if (runtime.config.notionToken) return;
   if (isHttpOauthMode(runtime)) {
     throw new Error(
@@ -101,18 +111,19 @@ async function ensureAuth(
   log.info("Auto OAuth completed", { via: result.via });
 }
 
-async function assertReady(
-  runtime: import("../runtime.js").Runtime,
-): Promise<void> {
+async function assertReady(runtime: import("../runtime.js").Runtime): Promise<void> {
   await ensureAuth(runtime);
   requireRootPageId(runtime.config);
   requireNotionToken(runtime.config);
 }
 
-export function registerTools(
-  server: McpServer,
-  runtime: import("../runtime.js").Runtime,
-): void {
+/** Auth only — for tools that accept an arbitrary parent page id. */
+async function assertAuth(runtime: import("../runtime.js").Runtime): Promise<void> {
+  await ensureAuth(runtime);
+  requireNotionToken(runtime.config);
+}
+
+export function registerTools(server: McpServer, runtime: import("../runtime.js").Runtime): void {
   const config = runtime.config;
 
   const catalog = () => runtime.catalog;
@@ -140,17 +151,13 @@ export function registerTools(
             service_count: Object.keys(config.serviceMap).length,
             workspace_name: runtime.sessionMeta?.workspace_name ?? null,
             missing,
-            hint: missing.length
-              ? `Not ready. Missing: ${missing.join(", ")}`
-              : "Ready.",
+            hint: missing.length ? `Not ready. Missing: ${missing.join(", ")}` : "Ready.",
           });
         }
         const { syncAuthFromDisk } = await import("../runtime.js");
         await syncAuthFromDisk(runtime);
         const { oauthAvailable } = await import("../oauth/login.js");
-        const { getCredentialsPath, loadOAuthTokens } = await import(
-          "../oauth/tokens.js"
-        );
+        const { getCredentialsPath, loadOAuthTokens } = await import("../oauth/tokens.js");
         const oauth = loadOAuthTokens();
         const avail = oauthAvailable();
         return textResult({
@@ -177,10 +184,7 @@ export function registerTools(
       description:
         "Open browser for Notion login (mcp.notion.com). Auto-runs on first Notion tool if not logged in. No CLIENT_ID/SECRET.",
       inputSchema: z.object({
-        wait: z
-          .boolean()
-          .optional()
-          .describe("Block until browser login finishes (default true)"),
+        wait: z.boolean().optional().describe("Block until browser login finishes (default true)"),
         open_browser: z.boolean().optional().default(true),
         timeout_ms: z.number().int().positive().optional(),
       }),
@@ -196,9 +200,7 @@ export function registerTools(
             has_notion_auth: Boolean(config.notionToken),
           });
         }
-        const { runOAuthLoginFlow, startOAuthLoginAsync } = await import(
-          "../oauth/login.js"
-        );
+        const { runOAuthLoginFlow, startOAuthLoginAsync } = await import("../oauth/login.js");
         const { rebindNotionAuth } = await import("../runtime.js");
         if (wait === false) {
           const started = await startOAuthLoginAsync({
@@ -262,9 +264,7 @@ export function registerTools(
           ok: true,
           cleared,
           auth_source: runtime.config.authSource,
-          message: cleared
-            ? "OAuth credentials removed."
-            : "No OAuth credentials file found.",
+          message: cleared ? "OAuth credentials removed." : "No OAuth credentials file found.",
         });
       } catch (err) {
         return errorResult(err);
@@ -278,10 +278,7 @@ export function registerTools(
       description:
         "Persist per-user workspace settings (NOT in repo .env). Pass the user's Plans root Notion URL or UUID. Optional services map slug→page_id. Merges services by default. Call after plan_status when root_page_id missing. Ask the user for their root page — never invent IDs.",
       inputSchema: z.object({
-        root_page_id: z
-          .string()
-          .optional()
-          .describe("Notion page UUID (with or without dashes)"),
+        root_page_id: z.string().optional().describe("Notion page UUID (with or without dashes)"),
         root_page_url: z
           .string()
           .optional()
@@ -310,14 +307,11 @@ export function registerTools(
             ok: true,
             saved,
             mode: "http-oauth",
-            message:
-              "Workspace config saved for this OAuth session. Restart not required.",
+            message: "Workspace config saved for this OAuth session. Restart not required.",
           });
         }
         const { oauthAvailable } = await import("../oauth/login.js");
-        const { getCredentialsPath, loadOAuthTokens } = await import(
-          "../oauth/tokens.js"
-        );
+        const { getCredentialsPath, loadOAuthTokens } = await import("../oauth/tokens.js");
         const oauth = loadOAuthTokens();
         const avail = oauthAvailable();
         const status = getConfigStatus({
@@ -331,8 +325,7 @@ export function registerTools(
           ok: true,
           saved,
           status,
-          message:
-            "Workspace config saved for this user/machine. Restart not required.",
+          message: "Workspace config saved for this user/machine. Restart not required.",
         });
       } catch (err) {
         return errorResult(err);
@@ -346,9 +339,7 @@ export function registerTools(
       description:
         "Ensure a service page exists under the configured Plans root. Creates if missing. Requires plan_configure + NOTION_TOKEN.",
       inputSchema: z.object({
-        service: z
-          .string()
-          .describe('Service slug or name, e.g. "billing" or "Auth Service"'),
+        service: z.string().describe('Service slug or name, e.g. "billing" or "Auth Service"'),
         dry_run: z.boolean().optional(),
       }),
     },
@@ -388,6 +379,69 @@ export function registerTools(
             ? new Error(NOT_CONFIGURED_MESSAGE)
             : err,
         );
+      }
+    },
+  );
+
+  server.registerTool(
+    "plan_create_child",
+    {
+      description:
+        "Create a Notion subpage under any parent page (UUID or URL). Use when the user gives a page id/URL and asks for a child under it — does not require plan_configure. For the usual Plans→service→plan bank, prefer plan_ensure_service + plan_upsert.",
+      inputSchema: z.object({
+        parent_page_id: z
+          .string()
+          .optional()
+          .describe("Parent Notion page UUID (with or without dashes)"),
+        parent_page_url: z.string().optional().describe("Full Notion URL of the parent page"),
+        title: z.string().describe("Title of the new child page"),
+        markdown: z.string().optional().describe("Optional initial markdown body (default: empty)"),
+        dry_run: z.boolean().optional(),
+      }),
+    },
+    async ({ parent_page_id, parent_page_url, title, markdown, dry_run }) => {
+      try {
+        await assertAuth(runtime);
+        const parentInput = parent_page_id || parent_page_url;
+        if (!parentInput) {
+          throw new Error(
+            "parent_page_id or parent_page_url is required. Pass the page that should own the new subpage.",
+          );
+        }
+        const parentId = normalizePageId(parentInput);
+        const body = markdown?.trim() ? markdown : "";
+        if (dry_run) {
+          return textResult({
+            dryRun: true,
+            parent_page_id: parentId,
+            title,
+            markdown_chars: body.length,
+          });
+        }
+        const created = await createPageWithMarkdown(
+          notion(),
+          parentId,
+          title,
+          body || `# ${title}\n`,
+        );
+        catalog().cache.invalidatePrefix("plans:");
+        catalog().cache.invalidatePrefix("services:");
+        const url = pageUrl(created.id);
+        log.info("Created child page", {
+          parent: parentId,
+          page_id: created.id,
+          title,
+        });
+        return textResult({
+          ok: true,
+          parent_page_id: parentId,
+          page_id: created.id,
+          title,
+          url,
+          etag: etagOf(body || `# ${title}\n`),
+        });
+      } catch (err) {
+        return errorResult(err);
       }
     },
   );
@@ -597,15 +651,9 @@ export function registerTools(
         let strategy: string;
 
         if (args.section) {
-          const range = findSectionRange(
-            current,
-            args.section,
-            args.occurrence ?? 1,
-          );
+          const range = findSectionRange(current, args.section, args.occurrence ?? 1);
           if (!range) {
-            throw new Error(
-              `Section not found: ${JSON.stringify(args.section)}`,
-            );
+            throw new Error(`Section not found: ${JSON.stringify(args.section)}`);
           }
           startLine = range.startLine;
           endLine = range.endLine;
@@ -615,18 +663,11 @@ export function registerTools(
           endLine = args.end_line;
           strategy = `lines:${startLine}-${endLine}`;
         } else {
-          throw new Error(
-            "Provide section or start_line+end_line. Full replace: use plan_upsert.",
-          );
+          throw new Error("Provide section or start_line+end_line. Full replace: use plan_upsert.");
         }
 
         const oldSlice = sliceLines(current, startLine, endLine);
-        const next = replaceLineRange(
-          current,
-          startLine,
-          endLine,
-          args.new_markdown,
-        );
+        const next = replaceLineRange(current, startLine, endLine, args.new_markdown);
         const newEtag = etagOf(next);
 
         if (args.dry_run) {
@@ -698,12 +739,7 @@ export function registerTools(
         const plan = await catalog().resolvePlan({ service, title, page_id });
         const markdown = await catalog().getMarkdown(plan.pageId, true);
         const out =
-          path ||
-          resolve(
-            config.exportDir,
-            plan.service,
-            `${sanitizeFilename(plan.title)}.md`,
-          );
+          path || resolve(config.exportDir, plan.service, `${sanitizeFilename(plan.title)}.md`);
 
         if (dry_run) {
           return textResult({

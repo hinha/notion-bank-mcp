@@ -1,11 +1,6 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 function slugifyServiceName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, "-");
@@ -37,9 +32,7 @@ export type ConfigStatus = {
 };
 
 function xdgConfigHome(): string {
-  return (
-    process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config")
-  );
+  return process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
 }
 
 /** Per-user config file. Not shared via repo .env. */
@@ -104,7 +97,7 @@ export function saveUserConfig(
     export_dir: next.export_dir,
     updated_at: next.updated_at ?? new Date().toISOString(),
   };
-  writeFileSync(path, JSON.stringify(saved, null, 2) + "\n", "utf8");
+  writeFileSync(path, `${JSON.stringify(saved, null, 2)}\n`, "utf8");
   return saved;
 }
 
@@ -121,14 +114,10 @@ export function configureWorkspace(args: {
   const merge = args.merge_services !== false;
 
   if (!rootInput && !existing) {
-    throw new Error(
-      "root_page_id or root_page_url is required on first configure.",
-    );
+    throw new Error("root_page_id or root_page_url is required on first configure.");
   }
 
-  const root = rootInput
-    ? normalizePageId(rootInput)
-    : existing!.root_page_id;
+  const root = rootInput ? normalizePageId(rootInput) : existing!.root_page_id;
 
   let services: Record<string, string> = {};
   if (merge && existing) services = { ...existing.services };

@@ -9,7 +9,8 @@ SETUP:
 3. If no Plans root: ask only for their Plans root Notion page URL → plan_configure
 
 WORKFLOW:
-- plan_upsert / plan_migrate for full plans
+- plan_upsert / plan_migrate for full plans under Plans→service→plan
+- plan_create_child(parent_page_id|url, title, markdown?) to create a subpage under any given page id
 - plan_get (lines + etag) then plan_update_range for surgical edits
 - Never invent page IDs or tokens
 `;
@@ -19,4 +20,5 @@ export const WORKFLOW_DOC = `# notion-bank agent workflow
 1. First Notion action → browser opens (automatic)
 2. Ask for Plans root Notion URL → plan_configure
 3. plan_upsert / plan_get / plan_update_range
+4. Arbitrary parent: plan_create_child(parent_page_id, title)
 `;

@@ -1,12 +1,6 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  renameSync,
-} from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import type { UserWorkspaceConfig } from "../user-config.js";
 
 export type NotionCreds = {
@@ -104,11 +98,54 @@ function saveFile(data: StoreFile): void {
 const pendingAuths = new Map<string, PendingAuth>();
 const authCodes = new Map<string, AuthCodeRecord>();
 
+/** Remove expired in-memory OAuth state. Returns counts removed. */
+export function pruneInMemoryAuth(now = Date.now()): {
+  pending: number;
+  codes: number;
+} {
+  let pending = 0;
+  let codes = 0;
+  for (const [k, v] of pendingAuths) {
+    if (v.expires_at < now) {
+      pendingAuths.delete(k);
+      pending++;
+    }
+  }
+  for (const [k, v] of authCodes) {
+    if (v.expires_at < now) {
+      authCodes.delete(k);
+      codes++;
+    }
+  }
+  return { pending, codes };
+}
+
+/** Drop expired access tokens from a store object. Returns whether anything changed. */
+export function purgeExpiredTokens(data: StoreFile, now = Date.now()): boolean {
+  let changed = false;
+  for (const [access, rec] of Object.entries(data.tokens)) {
+    if (rec.expires_at >= now) continue;
+    delete data.tokens[access];
+    delete data.refresh_index[rec.refresh_token];
+    changed = true;
+  }
+  return changed;
+}
+
+function loadAndPurge(): StoreFile {
+  pruneInMemoryAuth();
+  const data = loadFile();
+  if (purgeExpiredTokens(data)) saveFile(data);
+  return data;
+}
+
 export function putPendingAuth(id: string, pending: PendingAuth): void {
+  pruneInMemoryAuth();
   pendingAuths.set(id, pending);
 }
 
 export function takePendingAuth(id: string): PendingAuth | null {
+  pruneInMemoryAuth();
   const p = pendingAuths.get(id);
   if (!p) return null;
   pendingAuths.delete(id);
@@ -117,10 +154,12 @@ export function takePendingAuth(id: string): PendingAuth | null {
 }
 
 export function putAuthCode(record: AuthCodeRecord): void {
+  pruneInMemoryAuth();
   authCodes.set(record.code, record);
 }
 
 export function peekAuthCode(code: string): AuthCodeRecord | null {
+  pruneInMemoryAuth();
   const r = authCodes.get(code);
   if (!r) return null;
   if (r.expires_at < Date.now()) {
@@ -137,33 +176,33 @@ export function takeAuthCode(code: string): AuthCodeRecord | null {
   return r;
 }
 
+/** Test helper — in-memory map sizes after prune. */
+export function inMemoryAuthSizes(): { pending: number; codes: number } {
+  pruneInMemoryAuth();
+  return { pending: pendingAuths.size, codes: authCodes.size };
+}
+
 export function saveToken(record: McpTokenRecord): void {
-  const data = loadFile();
+  const data = loadAndPurge();
   data.tokens[record.access_token] = record;
   data.refresh_index[record.refresh_token] = record.access_token;
   saveFile(data);
 }
 
 export function getToken(accessToken: string): McpTokenRecord | null {
-  const data = loadFile();
-  const rec = data.tokens[accessToken];
-  if (!rec) return null;
-  if (rec.expires_at < Date.now()) return null;
-  return rec;
+  const data = loadAndPurge();
+  return data.tokens[accessToken] ?? null;
 }
 
 export function getTokenByRefresh(refreshToken: string): McpTokenRecord | null {
-  const data = loadFile();
+  const data = loadAndPurge();
   const access = data.refresh_index[refreshToken];
   if (!access) return null;
   return data.tokens[access] ?? null;
 }
 
-export function updateTokenWorkspace(
-  accessToken: string,
-  workspace: UserWorkspaceConfig,
-): void {
-  const data = loadFile();
+export function updateTokenWorkspace(accessToken: string, workspace: UserWorkspaceConfig): void {
+  const data = loadAndPurge();
   const rec = data.tokens[accessToken];
   if (!rec) throw new Error("Session not found for update");
   rec.workspace = workspace;
@@ -172,7 +211,7 @@ export function updateTokenWorkspace(
 }
 
 export function revokeAccessToken(accessToken: string): void {
-  const data = loadFile();
+  const data = loadAndPurge();
   const rec = data.tokens[accessToken];
   if (!rec) return;
   delete data.tokens[accessToken];
@@ -181,11 +220,11 @@ export function revokeAccessToken(accessToken: string): void {
 }
 
 export function getClientsMap(): Record<string, unknown> {
-  return loadFile().clients;
+  return loadAndPurge().clients;
 }
 
 export function saveClient(clientId: string, client: unknown): void {
-  const data = loadFile();
+  const data = loadAndPurge();
   data.clients[clientId] = client;
   saveFile(data);
 }

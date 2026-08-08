@@ -1,37 +1,37 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { Response } from "express";
-import type {
-  OAuthClientInformationFull,
-  OAuthTokens,
-} from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
+import { InvalidRequestError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type {
   AuthorizationParams,
   OAuthServerProvider,
 } from "@modelcontextprotocol/sdk/server/auth/provider.js";
-import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import { InvalidRequestError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import type {
+  OAuthClientInformationFull,
+  OAuthTokens,
+} from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { Response } from "express";
+import { log } from "../logging.js";
 import {
+  buildNotionMcpAuthorizeUrl,
+  exchangeNotionMcpCode,
+  NotionMcpBridge,
+  newPkce,
+} from "../notion/mcp-upstream.js";
+import { getPublicBaseUrl } from "./public-url.js";
+import {
+  getClientsMap,
   getToken,
   getTokenByRefresh,
+  type NotionCreds,
+  peekAuthCode,
   putAuthCode,
   putPendingAuth,
   saveClient,
   saveToken,
-  peekAuthCode,
   takeAuthCode,
   takePendingAuth,
-  getClientsMap,
-  type NotionCreds,
 } from "./session-store.js";
-import { getPublicBaseUrl } from "./public-url.js";
-import {
-  buildNotionMcpAuthorizeUrl,
-  exchangeNotionMcpCode,
-  newPkce,
-  NotionMcpBridge,
-} from "../notion/mcp-upstream.js";
-import { log } from "../logging.js";
 
 const ACCESS_TTL_MS = 60 * 60 * 1000;
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -42,25 +42,19 @@ export function notionCallbackUri(): string {
 }
 
 class PersistentClientsStore implements OAuthRegisteredClientsStore {
-  async getClient(
-    clientId: string,
-  ): Promise<OAuthClientInformationFull | undefined> {
+  async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
     const clients = getClientsMap();
     return clients[clientId] as OAuthClientInformationFull | undefined;
   }
 
   async registerClient(
-    clientMetadata: Omit<
-      OAuthClientInformationFull,
-      "client_id" | "client_id_issued_at"
-    >,
+    clientMetadata: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">,
   ): Promise<OAuthClientInformationFull> {
     const incoming = clientMetadata as OAuthClientInformationFull;
     const full: OAuthClientInformationFull = {
       ...incoming,
       client_id: incoming.client_id || randomUUID(),
-      client_id_issued_at:
-        incoming.client_id_issued_at ?? Math.floor(Date.now() / 1000),
+      client_id_issued_at: incoming.client_id_issued_at ?? Math.floor(Date.now() / 1000),
     };
     saveClient(full.client_id, full);
     return full;
@@ -106,10 +100,7 @@ export class NotionBankOAuthProvider implements OAuthServerProvider {
       res.redirect(url);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      res
-        .status(503)
-        .type("html")
-        .send(`<h1>Could not start Notion login</h1><p>${message}</p>`);
+      res.status(503).type("html").send(`<h1>Could not start Notion login</h1><p>${message}</p>`);
     }
   }
 
@@ -215,10 +206,7 @@ export async function handleNotionCallback(
   res: Response,
 ): Promise<void> {
   if (query.error) {
-    res
-      .status(400)
-      .type("html")
-      .send(`<h1>Notion auth denied</h1><p>${query.error}</p>`);
+    res.status(400).type("html").send(`<h1>Notion auth denied</h1><p>${query.error}</p>`);
     return;
   }
   if (!query.code || !query.state) {
@@ -275,9 +263,6 @@ export async function handleNotionCallback(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log.error("Notion MCP callback failed", { message });
-    res
-      .status(500)
-      .type("html")
-      .send(`<h1>Notion login failed</h1><p>${message}</p>`);
+    res.status(500).type("html").send(`<h1>Notion login failed</h1><p>${message}</p>`);
   }
 }

@@ -16,6 +16,14 @@ Auth still uses Notion’s hosted MCP (`mcp.notion.com`) via Dynamic Client Regi
 
 Session data is written under `~/.config/notion-bank/server/` on the host machine (not in the project tree).
 
+Optional knobs (leak / resource hygiene):
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| `NOTION_BANK_CACHE_MAX_ENTRIES` | `256` | Max in-process TTL cache entries (LRU eviction) |
+| `NOTION_BANK_CACHE_TTL_MS` | `60000` | Cache TTL |
+| `NOTION_BANK_HTTP_IDLE_MS` | `1800000` (30m) | Close idle MCP HTTP transports; `0` disables |
+
 ## Security checklist
 
 - Never commit `.env`, credentials, or OAuth pending files

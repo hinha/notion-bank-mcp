@@ -67,7 +67,10 @@ export function addressDocument(markdown: string): AddressedDocument {
 
 /** Normalize section matcher: "## Risks" or "Risks" */
 export function normalizeSectionQuery(section: string): string {
-  return section.replace(/^#+\s*/, "").trim().toLowerCase();
+  return section
+    .replace(/^#+\s*/, "")
+    .trim()
+    .toLowerCase();
 }
 
 export type SectionRange = {
@@ -86,15 +89,13 @@ export function findSectionRange(
   const toc = buildToc(markdown);
   const q = normalizeSectionQuery(section);
   const matches = toc.filter(
-    (t) =>
-      normalizeSectionQuery(t.text) === q ||
-      normalizeSectionQuery(t.heading) === q,
+    (t) => normalizeSectionQuery(t.text) === q || normalizeSectionQuery(t.heading) === q,
   );
   if (matches.length === 0) return null;
   const idx = occurrence - 1;
   if (idx < 0 || idx >= matches.length) return null;
   const hit = matches[idx];
-  const hitIndex = toc.findIndex((t) => t === hit);
+  const hitIndex = toc.indexOf(hit);
   const next = toc[hitIndex + 1];
   const lines = splitLines(markdown);
   const endLine = next ? next.line - 1 : lines.length;
@@ -107,11 +108,7 @@ export function findSectionRange(
   };
 }
 
-export function sliceLines(
-  markdown: string,
-  startLine: number,
-  endLine: number,
-): string {
+export function sliceLines(markdown: string, startLine: number, endLine: number): string {
   const lines = splitLines(markdown);
   const start = Math.max(1, startLine);
   const end = Math.min(lines.length, endLine);
@@ -143,10 +140,7 @@ export function replaceLineRange(
   return next.join("\n");
 }
 
-export function filterSections(
-  markdown: string,
-  sections: string[],
-): string {
+export function filterSections(markdown: string, sections: string[]): string {
   if (sections.length === 0) return markdown;
   const parts: string[] = [];
   for (const s of sections) {
@@ -161,10 +155,7 @@ export function truncateLines(markdown: string, maxLines: number): string {
   if (maxLines <= 0) return markdown;
   const lines = splitLines(markdown);
   if (lines.length <= maxLines) return markdown;
-  return (
-    lines.slice(0, maxLines).join("\n") +
-    `\n\n… truncated (${lines.length - maxLines} more lines)`
-  );
+  return `${lines.slice(0, maxLines).join("\n")}\n\n… truncated (${lines.length - maxLines} more lines)`;
 }
 
 export function searchInMarkdown(

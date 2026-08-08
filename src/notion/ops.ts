@@ -1,4 +1,4 @@
-import { NotionMcpBridge } from "./mcp-upstream.js";
+import type { NotionMcpBridge } from "./mcp-upstream.js";
 
 export type ChildPage = {
   id: string;
@@ -45,10 +45,18 @@ export function parseChildPages(text: string): ChildPage[] {
 }
 
 export function parsePageTitle(fetchText: string, fallback: string): string {
-  const titleTag = fetchText.match(/<page[^>]*title="([^"]+)"/i);
+  const unwrapped = unwrapFetchPayload(fetchText);
+  if (unwrapped.jsonTitle) return unwrapped.jsonTitle;
+
+  const titleTag = unwrapped.body.match(/<page[^>]*title="([^"]+)"/i);
   if (titleTag?.[1]) return titleTag[1];
-  const h1 = fetchText.match(/^#\s+(.+)$/m);
+
+  const props = unwrapped.body.match(/<properties>\s*\{[^}]*"title"\s*:\s*"([^"]+)"/i);
+  if (props?.[1]) return props[1];
+
+  const h1 = unwrapped.body.match(/^#\s+(.+)$/m);
   if (h1?.[1]) return h1[1].trim();
+
   const jsonName = fetchText.match(/"title"\s*:\s*"([^"]+)"/);
   if (jsonName?.[1]) return jsonName[1];
   return fallback;
@@ -75,14 +83,81 @@ export function stripRedundantTitle(markdown: string, title: string): string {
   return markdown;
 }
 
-/** Markdown body for addressing — strip wrapper chrome from fetch if present. */
-export function markdownFromFetch(fetchText: string): string {
-  // Prefer fenced content / page body; otherwise return as-is
-  const marker = fetchText.indexOf("\n# ");
-  if (marker > 0 && marker < 500) {
-    return fetchText.slice(marker + 1);
+type UnwrappedFetch = {
+  body: string;
+  jsonTitle: string | null;
+};
+
+/**
+ * Notion MCP `fetch` often returns a JSON envelope:
+ * `{ metadata, title, url, text: "…<page>…<content>markdown</content></page>" }`
+ */
+function unwrapFetchPayload(fetchText: string): UnwrappedFetch {
+  const trimmed = fetchText.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed) as {
+        title?: unknown;
+        text?: unknown;
+        markdown?: unknown;
+      };
+      const jsonTitle =
+        typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : null;
+      const inner =
+        typeof parsed.text === "string"
+          ? parsed.text
+          : typeof parsed.markdown === "string"
+            ? parsed.markdown
+            : null;
+      if (inner != null) {
+        return { body: inner, jsonTitle };
+      }
+    } catch {
+      /* not JSON — treat as raw text */
+    }
   }
-  return fetchText;
+  return { body: fetchText, jsonTitle: null };
+}
+
+function extractContentTag(body: string): string | null {
+  const match = body.match(/<content>([\s\S]*?)<\/content>/i);
+  if (!match) return null;
+  return `${match[1].replace(/^\n+/, "").replace(/\n+$/, "")}\n`;
+}
+
+function extractFromFirstHeading(body: string): string | null {
+  const match = body.match(/(^|\n)(#\s+[^\n]+[\s\S]*)$/);
+  if (!match) return null;
+  return `${match[2].replace(/^\n+/, "").replace(/\n+$/, "")}\n`;
+}
+
+/**
+ * Markdown body for addressing — strip Notion MCP fetch chrome
+ * (JSON envelope, view preface, <page>/<content> wrappers).
+ */
+export function markdownFromFetch(fetchText: string): string {
+  const { body } = unwrapFetchPayload(fetchText);
+
+  const fromContent = extractContentTag(body);
+  if (fromContent) return fromContent;
+
+  // Close dangling content if Notion truncates the closing tag
+  const openContent = body.match(/<content>([\s\S]*)$/i);
+  if (openContent && !body.includes("</content>")) {
+    let md = openContent[1];
+    md = md.replace(/<\/page>\s*$/i, "");
+    return `${md.replace(/^\n+/, "").replace(/\n+$/, "")}\n`;
+  }
+
+  const fromHeading = extractFromFirstHeading(body);
+  if (fromHeading) return fromHeading;
+
+  // Already plain markdown (or unknown shape)
+  if (body.trimStart().startsWith("#")) {
+    return `${body.replace(/^\n+/, "").replace(/\n+$/, "")}\n`;
+  }
+
+  return body;
 }
 
 export async function listChildPages(
@@ -98,18 +173,12 @@ export async function listChildPages(
   return parseChildPages(fetched).filter((p) => p.id !== parentPageId);
 }
 
-export async function getPageTitle(
-  bridge: NotionMcpBridge,
-  pageId: string,
-): Promise<string> {
+export async function getPageTitle(bridge: NotionMcpBridge, pageId: string): Promise<string> {
   const text = await bridge.fetch(pageId);
   return parsePageTitle(text, pageId);
 }
 
-export async function retrieveMarkdown(
-  bridge: NotionMcpBridge,
-  pageId: string,
-): Promise<string> {
+export async function retrieveMarkdown(bridge: NotionMcpBridge, pageId: string): Promise<string> {
   const text = await bridge.fetch(pageId);
   return markdownFromFetch(text);
 }

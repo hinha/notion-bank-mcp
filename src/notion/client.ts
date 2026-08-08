@@ -19,10 +19,7 @@ export type ChildPage = {
   title: string;
 };
 
-export async function listChildPages(
-  notion: Client,
-  parentPageId: string,
-): Promise<ChildPage[]> {
+export async function listChildPages(notion: Client, parentPageId: string): Promise<ChildPage[]> {
   const results: ChildPage[] = [];
   let cursor: string | undefined;
   do {
@@ -45,10 +42,7 @@ export async function listChildPages(
   return results;
 }
 
-export async function getPageTitle(
-  notion: Client,
-  pageId: string,
-): Promise<string> {
+export async function getPageTitle(notion: Client, pageId: string): Promise<string> {
   const page = await notion.pages.retrieve({ page_id: pageId });
   if (!("properties" in page)) return pageId;
   const props = page.properties;
@@ -60,10 +54,7 @@ export async function getPageTitle(
   return pageId;
 }
 
-export async function retrieveMarkdown(
-  notion: Client,
-  pageId: string,
-): Promise<string> {
+export async function retrieveMarkdown(notion: Client, pageId: string): Promise<string> {
   const res = await notion.pages.retrieveMarkdown({ page_id: pageId });
   return res.markdown ?? "";
 }

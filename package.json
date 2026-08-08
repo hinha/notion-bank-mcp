@@ -1,21 +1,42 @@
 {
   "name": "notion-bank-mcp",
-  "version": "1.4.0",
+  "version": "1.4.3",
   "description": "Notion plan-bank MCP — npx install, browser OAuth via mcp.notion.com",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "notion-bank-mcp": "dist/index.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "start": "node dist/index.js",
     "serve": "tsx src/index.ts serve",
     "serve:prod": "node dist/index.js serve",
     "dev": "tsx src/index.ts serve",
     "stdio": "tsx src/index.ts --stdio",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/**/*.test.ts"
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "format:check": "biome check .",
+    "test": "node scripts/run-tests.mjs",
+    "test:coverage": "c8 --reporter=text --reporter=lcov --reporter=json-summary --check-coverage --lines 75 --functions 75 --branches 75 --statements 75 npm run test",
+    "coverage:warn90": "node scripts/coverage-warn90.mjs",
+    "check": "npm run typecheck && npm run lint && npm run test:coverage && npm run coverage:warn90"
   },
   "keywords": [
     "mcp",
@@ -24,6 +45,17 @@
   ],
   "author": "hinha",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hinha/notion-bank-mcp.git"
+  },
+  "homepage": "https://github.com/hinha/notion-bank-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/hinha/notion-bank-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -33,8 +65,10 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
     "@types/express": "^4.17.23",
     "@types/node": "^22.15.30",
+    "c8": "^10.1.3",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   }

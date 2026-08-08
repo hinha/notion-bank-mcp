@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   addressDocument,
+  filterSections,
   findSectionRange,
+  formatTocYaml,
   replaceLineRange,
   searchInMarkdown,
+  sliceLines,
+  truncateLines,
   withLineNumbers,
 } from "./addressing.js";
-import { markdownToBlocks, chunkBlocks, toRichText } from "./notion/chunker.js";
 import { etagOf } from "./config.js";
+import { chunkBlocks, markdownToBlocks, toRichText } from "./notion/chunker.js";
 
 describe("addressing", () => {
   const md = `# Goal\n\nDo thing.\n\n## Risks\n\n- A\n\n## Risks\n\n- B\n`;
@@ -25,6 +29,13 @@ describe("addressing", () => {
     assert.equal(doc.toc[1].line, 5);
   });
 
+  it("formatTocYaml handles empty and populated toc", () => {
+    assert.equal(formatTocYaml([]), "toc: []");
+    const yaml = formatTocYaml(addressDocument(md).toc);
+    assert.match(yaml, /^toc:\n/);
+    assert.match(yaml, /line: 1/);
+  });
+
   it("finds section by occurrence", () => {
     const first = findSectionRange(md, "Risks", 1);
     const second = findSectionRange(md, "## Risks", 2);
@@ -34,15 +45,40 @@ describe("addressing", () => {
     assert.equal(second!.startLine, 9);
   });
 
+  it("findSectionRange returns null for missing or bad occurrence", () => {
+    assert.equal(findSectionRange(md, "Nope"), null);
+    assert.equal(findSectionRange(md, "Risks", 0), null);
+    assert.equal(findSectionRange(md, "Risks", 99), null);
+  });
+
+  it("sliceLines and filterSections", () => {
+    assert.equal(sliceLines(md, 5, 7), "## Risks\n\n- A");
+    assert.equal(sliceLines(md, 90, 91), "");
+    assert.equal(filterSections(md, []), md);
+    const filtered = filterSections(md, ["Goal", "Missing"]);
+    assert.match(filtered, /# Goal/);
+    assert.doesNotMatch(filtered, /## Risks/);
+  });
+
+  it("truncateLines", () => {
+    assert.equal(truncateLines(md, 0), md);
+    assert.equal(truncateLines("a\nb", 10), "a\nb");
+    assert.match(truncateLines(md, 2), /truncated/);
+  });
+
   it("replaceLineRange updates slice", () => {
     const next = replaceLineRange(md, 5, 7, "## Risks\n\n- Z");
     assert.match(next, /## Risks\n\n- Z/);
     assert.match(next, /## Risks\n\n- B/);
+    assert.equal(replaceLineRange("a\nb\nc", 2, 2, ""), "a\nc");
+    assert.throws(() => replaceLineRange("a\nb", 9, 10, "x"), /Invalid line range/);
   });
 
   it("searchInMarkdown returns line hits", () => {
     const hits = searchInMarkdown(md, "Do thing");
     assert.equal(hits[0].line, 3);
+    assert.deepEqual(searchInMarkdown(md, "   "), []);
+    assert.equal(searchInMarkdown(md, "Risks", 1).length, 1);
   });
 });
 
@@ -67,6 +103,15 @@ describe("chunker", () => {
     const blocks = markdownToBlocks("# T\n\n```ts\nconst x = 1\n```\n");
     assert.equal(blocks[0].type, "heading_1");
     assert.equal(blocks[1].type, "code");
+  });
+
+  it("parses lists quotes and empty input", () => {
+    assert.deepEqual(markdownToBlocks(""), []);
+    const blocks = markdownToBlocks("> tip\n\n1. one\n\n- bullet\n\nplain para");
+    assert.ok(blocks.some((b) => b.type === "quote"));
+    assert.ok(blocks.some((b) => b.type === "numbered_list_item"));
+    assert.ok(blocks.some((b) => b.type === "bulleted_list_item"));
+    assert.ok(blocks.some((b) => b.type === "paragraph"));
   });
 });
 

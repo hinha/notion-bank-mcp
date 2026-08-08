@@ -68,8 +68,7 @@ export function markdownToBlocks(markdown: string): BlockObjectRequest[] {
     const heading = line.match(/^(#{1,3})\s+(.+)\s*$/);
     if (heading) {
       const level = heading[1].length;
-      const type =
-        level === 1 ? "heading_1" : level === 2 ? "heading_2" : "heading_3";
+      const type = level === 1 ? "heading_1" : level === 2 ? "heading_2" : "heading_3";
       blocks.push({
         object: "block",
         type,
@@ -160,7 +159,22 @@ export function chunkBlocks(
 
 function sanitizeLanguage(
   lang: string,
-): "plain text" | "javascript" | "typescript" | "python" | "go" | "bash" | "json" | "markdown" | "yaml" | "sql" | "html" | "css" | "rust" | "java" | "shell" {
+):
+  | "plain text"
+  | "javascript"
+  | "typescript"
+  | "python"
+  | "go"
+  | "bash"
+  | "json"
+  | "markdown"
+  | "yaml"
+  | "sql"
+  | "html"
+  | "css"
+  | "rust"
+  | "java"
+  | "shell" {
   const map: Record<string, string> = {
     js: "javascript",
     ts: "typescript",

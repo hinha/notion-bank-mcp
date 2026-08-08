@@ -3,17 +3,13 @@
  * official Notion Cursor plugin. Uses Dynamic Client Registration; NO CLIENT_ID/SECRET.
  */
 import { createHash, randomBytes } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { getDataDir } from "../http/session-store.js";
 import { log } from "../logging.js";
+import { getPackageVersion } from "../package-meta.js";
 
 export const NOTION_MCP_URL = "https://mcp.notion.com/mcp";
 export const NOTION_MCP_ISSUER = "https://mcp.notion.com";
@@ -39,13 +35,9 @@ function clientStorePath(): string {
 
 export async function discoverNotionMcpOAuth(): Promise<OAuthServerMeta> {
   if (cachedMeta) return cachedMeta;
-  const res = await fetch(
-    `${NOTION_MCP_ISSUER}/.well-known/oauth-authorization-server`,
-  );
+  const res = await fetch(`${NOTION_MCP_ISSUER}/.well-known/oauth-authorization-server`);
   if (!res.ok) {
-    throw new Error(
-      `Failed to discover Notion MCP OAuth metadata: ${res.status}`,
-    );
+    throw new Error(`Failed to discover Notion MCP OAuth metadata: ${res.status}`);
   }
   cachedMeta = (await res.json()) as OAuthServerMeta;
   return cachedMeta;
@@ -62,9 +54,7 @@ export function newPkce(): { verifier: string; challenge: string } {
 }
 
 /** Ensure a DCR client exists for our redirect URI (public client, no secret). */
-export async function ensureNotionMcpDcrClient(
-  redirectUri: string,
-): Promise<RegisteredClient> {
+export async function ensureNotionMcpDcrClient(redirectUri: string): Promise<RegisteredClient> {
   const path = clientStorePath();
   if (existsSync(path)) {
     try {
@@ -166,9 +156,7 @@ export async function exchangeNotionMcpCode(args: {
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(
-      `Notion MCP token exchange failed ${res.status}: ${text.slice(0, 300)}`,
-    );
+    throw new Error(`Notion MCP token exchange failed ${res.status}: ${text.slice(0, 300)}`);
   }
   const json = JSON.parse(text) as {
     access_token: string;
@@ -206,9 +194,7 @@ export async function refreshNotionMcpToken(args: {
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(
-      `Notion MCP refresh failed ${res.status}: ${text.slice(0, 300)}`,
-    );
+    throw new Error(`Notion MCP refresh failed ${res.status}: ${text.slice(0, 300)}`);
   }
   const json = JSON.parse(text) as {
     access_token: string;
@@ -236,28 +222,55 @@ function toolText(result: {
   return text;
 }
 
+export type NotionMcpBridgeOptions = {
+  /**
+   * Called when Notion rejects the access token. Return a fresh access token
+   * to retry once, or null to surface the original error.
+   */
+  onUnauthorized?: () => Promise<string | null>;
+};
+
+function looksLikeAuthFailure(message: string): boolean {
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("invalid auth token") ||
+    msg.includes("invalid_token") ||
+    msg.includes("unauthorized") ||
+    msg.includes("authentication required") ||
+    msg.includes("not authenticated") ||
+    /\b401\b/.test(msg) ||
+    (msg.includes("expired") && msg.includes("token"))
+  );
+}
+
 /** Thin client: call Notion hosted MCP tools with a user access token. */
 export class NotionMcpBridge {
   private client: Client | null = null;
   private transport: StreamableHTTPClientTransport | null = null;
+  private accessToken: string;
+  private readonly onUnauthorized?: () => Promise<string | null>;
 
-  constructor(private accessToken: string) {}
+  constructor(accessToken: string, opts?: NotionMcpBridgeOptions) {
+    this.accessToken = accessToken;
+    this.onUnauthorized = opts?.onUnauthorized;
+  }
+
+  setAccessToken(token: string): void {
+    this.accessToken = token;
+  }
 
   private async connect(): Promise<Client> {
     if (this.client) return this.client;
-    const transport = new StreamableHTTPClientTransport(
-      new URL(NOTION_MCP_URL),
-      {
-        requestInit: {
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-          },
+    const transport = new StreamableHTTPClientTransport(new URL(NOTION_MCP_URL), {
+      requestInit: {
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
         },
       },
-    );
+    });
     const client = new Client({
       name: "notion-bank-mcp",
-      version: "1.4.0",
+      version: getPackageVersion(),
     });
     await client.connect(transport);
     this.transport = transport;
@@ -275,10 +288,7 @@ export class NotionMcpBridge {
     this.transport = null;
   }
 
-  private async call(
-    names: string[],
-    args: Record<string, unknown>,
-  ): Promise<string> {
+  private async callOnce(names: string[], args: Record<string, unknown>): Promise<string> {
     const client = await this.connect();
     let lastErr: Error | null = null;
     for (const name of names) {
@@ -293,17 +303,34 @@ export class NotionMcpBridge {
       } catch (err) {
         lastErr = err instanceof Error ? err : new Error(String(err));
         const msg = lastErr.message.toLowerCase();
-        if (
-          msg.includes("unknown tool") ||
-          msg.includes("not found") ||
-          msg.includes("tool not")
-        ) {
+        if (msg.includes("unknown tool") || msg.includes("not found") || msg.includes("tool not")) {
           continue;
         }
         throw lastErr;
       }
     }
     throw lastErr ?? new Error(`No matching Notion MCP tool: ${names.join(",")}`);
+  }
+
+  private async call(names: string[], args: Record<string, unknown>): Promise<string> {
+    try {
+      return await this.callOnce(names, args);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!looksLikeAuthFailure(message) || !this.onUnauthorized) {
+        throw err;
+      }
+      log.warn("Notion MCP auth failed; attempting token refresh", {
+        err: message.slice(0, 200),
+      });
+      const next = await this.onUnauthorized();
+      if (!next) {
+        throw new Error(`${message} — token refresh failed. Run plan_oauth_login again.`);
+      }
+      this.accessToken = next;
+      await this.close();
+      return await this.callOnce(names, args);
+    }
   }
 
   async fetch(id: string): Promise<string> {
@@ -344,11 +371,7 @@ export class NotionMcpBridge {
     });
   }
 
-  async updateContent(
-    pageId: string,
-    oldStr: string,
-    newStr: string,
-  ): Promise<string> {
+  async updateContent(pageId: string, oldStr: string, newStr: string): Promise<string> {
     return this.call(["notion-update-page", "update-page"], {
       page_id: pageId,
       command: "update_content",

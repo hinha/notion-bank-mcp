@@ -1,30 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import {
   getOAuthProtectedResourceMetadataUrl,
   mcpAuthRouter,
 } from "@modelcontextprotocol/sdk/server/auth/router.js";
-import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
+import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { log } from "../logging.js";
+import { buildMcpServer, runtimeFromAccessToken } from "./create-mcp.js";
 import {
   handleNotionCallback,
   NotionBankOAuthProvider,
   notionCallbackUri,
 } from "./oauth-provider.js";
-import {
-  getListenPort,
-  getMcpUrl,
-  getPublicBaseUrl,
-} from "./public-url.js";
-import { buildMcpServer, runtimeFromAccessToken } from "./create-mcp.js";
+import { getListenPort, getMcpUrl, getPublicBaseUrl } from "./public-url.js";
 import { getDataDir } from "./session-store.js";
-import { log } from "../logging.js";
-
-type TransportEntry = {
-  transport: StreamableHTTPServerTransport;
-  accessToken: string;
-};
+import { resolveHttpIdleMs, TransportSessionRegistry } from "./transport-sessions.js";
 
 export async function startHttpServer(): Promise<void> {
   const publicBase = getPublicBaseUrl();
@@ -38,12 +30,7 @@ export async function startHttpServer(): Promise<void> {
     host === "0.0.0.0" || host === "::"
       ? {
           host,
-          allowedHosts: [
-            issuerUrl.hostname,
-            "127.0.0.1",
-            "localhost",
-            "[::1]",
-          ],
+          allowedHosts: [issuerUrl.hostname, "127.0.0.1", "localhost", "[::1]"],
         }
       : { host };
 
@@ -62,11 +49,15 @@ export async function startHttpServer(): Promise<void> {
   );
 
   app.get("/notion/callback", async (req, res) => {
-    await handleNotionCallback(provider, {
-      code: typeof req.query.code === "string" ? req.query.code : undefined,
-      state: typeof req.query.state === "string" ? req.query.state : undefined,
-      error: typeof req.query.error === "string" ? req.query.error : undefined,
-    }, res);
+    await handleNotionCallback(
+      provider,
+      {
+        code: typeof req.query.code === "string" ? req.query.code : undefined,
+        state: typeof req.query.state === "string" ? req.query.state : undefined,
+        error: typeof req.query.error === "string" ? req.query.error : undefined,
+      },
+      res,
+    );
   });
 
   app.get("/health", (_req, res) => {
@@ -87,7 +78,9 @@ export async function startHttpServer(): Promise<void> {
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpServerUrl),
   });
 
-  const transports: Record<string, TransportEntry> = {};
+  const idleMs = resolveHttpIdleMs();
+  const transports = new TransportSessionRegistry<StreamableHTTPServerTransport>(idleMs);
+  transports.start();
 
   const mcpHandler = async (req: import("express").Request, res: import("express").Response) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
@@ -98,7 +91,7 @@ export async function startHttpServer(): Promise<void> {
     }
 
     try {
-      let entry = sessionId ? transports[sessionId] : undefined;
+      const entry = sessionId ? transports.get(sessionId) : undefined;
 
       if (entry) {
         await entry.transport.handleRequest(req, res, req.body);
@@ -109,12 +102,12 @@ export async function startHttpServer(): Promise<void> {
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (sid) => {
-            transports[sid] = { transport, accessToken };
+            transports.set(sid, { transport, accessToken });
           },
         });
         transport.onclose = () => {
           const sid = transport.sessionId;
-          if (sid) delete transports[sid];
+          if (sid) transports.delete(sid);
         };
 
         const runtime = runtimeFromAccessToken(accessToken);
@@ -161,6 +154,7 @@ export async function startHttpServer(): Promise<void> {
     port,
     mcp_url: mcpUrl,
     oauth_upstream: "https://mcp.notion.com",
+    http_idle_ms: idleMs,
   });
   // eslint-disable-next-line no-console
   console.error(

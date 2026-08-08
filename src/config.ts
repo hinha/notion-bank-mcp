@@ -1,11 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-  loadUserConfig,
-  type UserWorkspaceConfig,
-} from "./user-config.js";
 import { resolveAccessToken } from "./oauth/tokens.js";
+import { loadUserConfig, type UserWorkspaceConfig } from "./user-config.js";
 
 export type NotionBankConfig = {
   notionToken: string | null;
@@ -19,10 +16,7 @@ export type NotionBankConfig = {
 };
 
 function loadDotEnv(): void {
-  const candidates = [
-    resolve(process.cwd(), ".env"),
-    resolve(import.meta.dirname, "../../.env"),
-  ];
+  const candidates = [resolve(process.cwd(), ".env"), resolve(import.meta.dirname, "../../.env")];
   for (const file of candidates) {
     if (!existsSync(file)) continue;
     const text = readFileSync(file, "utf8");
@@ -68,8 +62,7 @@ export function reloadWorkspace(): NotionBankConfig {
     authSource: resolved.source,
     rootPageId: workspace?.root_page_id ?? null,
     serviceMap: { ...(workspace?.services ?? {}) },
-    exportDir:
-      workspace?.export_dir?.trim() || resolve(process.cwd(), "exports"),
+    exportDir: workspace?.export_dir?.trim() || resolve(process.cwd(), "exports"),
     cacheTtlMs,
     workspace,
   };
