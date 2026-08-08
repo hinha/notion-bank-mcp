@@ -1,6 +1,6 @@
 {
   "name": "notion-bank-mcp",
-  "version": "1.4.3",
+  "version": "0.1.0",
   "description": "Notion plan-bank MCP — npx install, browser OAuth via mcp.notion.com",
   "type": "module",
   "main": "dist/index.js",
